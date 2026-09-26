@@ -1,0 +1,506 @@
+"""Google Drive persistent storage backend.
+
+Communicates with Google Drive API v3 via Service Account credentials for persistent
+document, workspace, vector-store, export, and artifact storage across Render container lifecycles.
+"""
+from __future__ import annotations
+
+import base64
+import io
+import json
+import logging
+import os
+import tempfile
+from pathlib import Path
+from typing import Any, Optional
+
+from storage.base import (
+    ALLOWED_CATEGORIES,
+    StorageBackend,
+    guess_mime_type,
+    resolve_category_and_thread,
+    sanitize_relative_path,
+    sanitize_thread_id,
+)
+
+logger = logging.getLogger("storage.google_drive")
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+
+class GoogleDriveStorage(StorageBackend):
+    """Google Drive storage backend implementing the StorageBackend interface."""
+
+    def __init__(
+        self,
+        service_account_json: Optional[str | dict] = None,
+        root_folder_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        self._raw_creds = (
+            service_account_json
+            or kwargs.get("service_account_info")
+            or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+        )
+        self._root_folder_id = (
+            root_folder_id
+            or kwargs.get("folder_id")
+            or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+        )
+        self._enabled = False
+        self._service: Any = None
+        self._folder_cache: dict[str, str] = {}  # "category/thread_id/subdirs" -> folder_id
+        self._init_service()
+
+    def _init_service(self) -> None:
+        """Initialize Google Drive service client safely without throwing on missing config."""
+        if not self._raw_creds:
+            logger.info("Google Drive storage disabled: GOOGLE_SERVICE_ACCOUNT_JSON not provided.")
+            self._enabled = False
+            return
+
+        try:
+            from google.oauth2 import service_account
+            from googleapiclient.discovery import build
+
+            creds_data = self._parse_credentials_payload(self._raw_creds)
+            credentials = service_account.Credentials.from_service_account_info(
+                creds_data, scopes=SCOPES
+            )
+            self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+            self._enabled = True
+            logger.info("Google Drive storage initialized successfully.")
+        except Exception as exc:
+            # Never print secrets or full payload
+            logger.warning("Failed to initialize Google Drive storage: %s", exc)
+            self._enabled = False
+
+    @staticmethod
+    def _parse_credentials_payload(payload: str | dict) -> dict[str, Any]:
+        """Parse service account JSON from dict, file path, raw JSON, or base64-encoded string."""
+        if isinstance(payload, dict):
+            return payload
+        s = str(payload).strip()
+        if os.path.isfile(s):
+            with open(s, "r", encoding="utf-8") as fp:
+                return json.load(fp)
+
+        # Raw JSON string
+        if s.startswith("{") and s.endswith("}"):
+            return json.loads(s)
+
+        # Base64-encoded JSON string
+        try:
+            decoded = base64.b64decode(s).decode("utf-8")
+            if decoded.strip().startswith("{"):
+                return json.loads(decoded)
+        except Exception:
+            pass
+
+        raise ValueError("Invalid GOOGLE_SERVICE_ACCOUNT_JSON format. Expected file path, raw JSON, or base64 JSON.")
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @property
+    def backend_name(self) -> str:
+        return "google_drive"
+
+    def _escape_query_str(self, val: str) -> str:
+        """Escape single quotes in Drive search queries."""
+        return val.replace("'", "\\'")
+
+    def _get_root_id(self) -> str:
+        """Get or resolve root folder ID."""
+        if self._root_folder_id:
+            return self._root_folder_id
+        if "root" in self._folder_cache:
+            return self._folder_cache["root"]
+
+        # Search for existing 'Agent-Pilot' folder in service account root
+        escaped_name = self._escape_query_str("Agent-Pilot")
+        q = f"'root' in parents and name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        res = self._service.files().list(q=q, spaces="drive", fields="files(id)").execute()
+        files = res.get("files", [])
+        if files:
+            folder_id = files[0]["id"]
+        else:
+            meta = {
+                "name": "Agent-Pilot",
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": ["root"],
+            }
+            folder = self._service.files().create(body=meta, fields="id").execute()
+            folder_id = folder.get("id")
+
+        self._folder_cache["root"] = folder_id
+        return folder_id
+
+    def get_or_create_folder(self, name: str, parent_id: str) -> str:
+        """Find an existing folder under parent_id or create it idempotently."""
+        cache_key = f"{parent_id}/{name}"
+        if cache_key in self._folder_cache:
+            return self._folder_cache[cache_key]
+
+        escaped_name = self._escape_query_str(name)
+        q = f"'{parent_id}' in parents and name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        res = self._service.files().list(q=q, spaces="drive", fields="files(id)").execute()
+        files = res.get("files", [])
+
+        if files:
+            folder_id = files[0]["id"]
+        else:
+            meta = {
+                "name": name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [parent_id],
+            }
+            folder = self._service.files().create(body=meta, fields="id").execute()
+            folder_id = folder.get("id")
+
+        self._folder_cache[cache_key] = folder_id
+        return folder_id
+
+    def get_or_create_thread_folder(self, category: str, thread_id: str) -> str:
+        """Get or create the specific category and thread folder path."""
+        if category not in ALLOWED_CATEGORIES:
+            raise ValueError(f"Category '{category}' is invalid. Allowed: {sorted(ALLOWED_CATEGORIES)}")
+
+        clean_tid = sanitize_thread_id(thread_id)
+        cache_key = f"{category}/{clean_tid}"
+        if cache_key in self._folder_cache:
+            return self._folder_cache[cache_key]
+
+        root_id = self._get_root_id()
+        cat_folder_id = self.get_or_create_folder(category, root_id)
+        thread_folder_id = self.get_or_create_folder(clean_tid, cat_folder_id)
+
+        self._folder_cache[cache_key] = thread_folder_id
+        return thread_folder_id
+
+    def _resolve_target_folder(self, category: str, thread_id: str, relative_path: str) -> tuple[str, str]:
+        """Resolve any nested subdirectories in relative_path and return (target_folder_id, leaf_filename)."""
+        clean_rel = sanitize_relative_path(relative_path)
+        parts = clean_rel.split("/")
+        leaf_name = parts[-1]
+        subdirs = parts[:-1]
+
+        current_folder_id = self.get_or_create_thread_folder(category, thread_id)
+        for sub in subdirs:
+            current_folder_id = self.get_or_create_folder(sub, current_folder_id)
+
+        return current_folder_id, leaf_name
+
+    def upload_bytes(
+        self,
+        category: Optional[str] = None,
+        thread_id: Optional[str] = None,
+        filename: str = "",
+        file_bytes: Optional[bytes] = None,
+        mime_type: Optional[str] = None,
+        data: Optional[bytes] = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Upload raw bytes into Google Drive with update-or-create semantics."""
+        if not self._enabled:
+            return {"error": "Google Drive storage disabled", "success": False}
+
+        cat, tid = resolve_category_and_thread(category, thread_id, default_category="workspace")
+        payload = file_bytes if file_bytes is not None else (data if data is not None else b"")
+        folder_id, leaf_name = self._resolve_target_folder(cat or "workspace", tid, filename)
+        mime = mime_type or guess_mime_type(leaf_name)
+
+        from googleapiclient.http import MediaIoBaseUpload
+
+        media = MediaIoBaseUpload(io.BytesIO(payload), mimetype=mime, resumable=len(payload) > 5 * 1024 * 1024)
+
+        # Search if file already exists in target folder to update in-place
+        escaped_name = self._escape_query_str(leaf_name)
+        q = f"'{folder_id}' in parents and name = '{escaped_name}' and trashed = false"
+        res = self._service.files().list(q=q, spaces="drive", fields="files(id)").execute()
+        files = res.get("files", [])
+
+        if files:
+            file_id = files[0]["id"]
+            updated = self._service.files().update(
+                fileId=file_id,
+                media_body=media,
+                fields="id, name, size, mimeType, modifiedTime",
+            ).execute()
+            item = updated
+        else:
+            meta = {"name": leaf_name, "parents": [folder_id]}
+            created = self._service.files().create(
+                body=meta,
+                media_body=media,
+                fields="id, name, size, mimeType, modifiedTime",
+            ).execute()
+            item = created
+
+        return {
+            "file_id": item.get("id"),
+            "filename": filename,
+            "name": leaf_name,
+            "size_bytes": len(payload),
+            "mime_type": mime,
+            "category": cat or "workspace",
+            "thread_id": tid,
+            "success": True,
+        }
+
+    def download_bytes(
+        self,
+        category: Optional[str] = None,
+        thread_id: Optional[str] = None,
+        filename: str = "",
+        **kwargs: Any,
+    ) -> Optional[bytes]:
+        """Download raw file bytes from Google Drive."""
+        if not self._enabled:
+            return None
+
+        try:
+            cat, tid = resolve_category_and_thread(category, thread_id, default_category="workspace")
+            file_meta = self.find_file(cat or "workspace", tid, filename)
+            if not file_meta or not file_meta.get("id"):
+                return None
+
+            from googleapiclient.http import MediaIoBaseDownload
+
+            file_id = file_meta["id"]
+            request = self._service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            return fh.getvalue()
+        except Exception as exc:
+            logger.warning("Failed to download '%s' from Google Drive: %s", filename, exc)
+            return None
+
+    def find_file(
+        self,
+        category: str,
+        thread_id: str,
+        filename: str,
+    ) -> Optional[dict[str, Any]]:
+        """Locate file metadata in Google Drive."""
+        if not self._enabled:
+            return None
+        try:
+            cat, tid = resolve_category_and_thread(category, thread_id, default_category="workspace")
+            folder_id, leaf_name = self._resolve_target_folder(cat or "workspace", tid, filename)
+            escaped = self._escape_query_str(leaf_name)
+            q = f"'{folder_id}' in parents and name = '{escaped}' and trashed = false"
+            res = self._service.files().list(
+                q=q, spaces="drive", fields="files(id, name, mimeType, size, modifiedTime)"
+            ).execute()
+            files = res.get("files", [])
+            return files[0] if files else None
+        except Exception as exc:
+            logger.warning("Failed to locate file '%s' in Google Drive: %s", filename, exc)
+            return None
+
+    def delete_file(
+        self,
+        category: Optional[str] = None,
+        thread_id: Optional[str] = None,
+        filename: str = "",
+        **kwargs: Any,
+    ) -> bool:
+        """Delete file from Google Drive."""
+        if not self._enabled:
+            return False
+        try:
+            cat, tid = resolve_category_and_thread(category, thread_id, default_category="workspace")
+            file_meta = self.find_file(cat or "workspace", tid, filename)
+            if not file_meta or not file_meta.get("id"):
+                return False
+            self._service.files().delete(fileId=file_meta["id"]).execute()
+            return True
+        except Exception as exc:
+            logger.warning("Failed to delete '%s' from Google Drive: %s", filename, exc)
+            return False
+
+    def list_files(
+        self,
+        *args: Any,
+        category: Optional[str] = None,
+        thread_id: Optional[str] = None,
+        prefix: str = "",
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        """List files in Google Drive folder."""
+        if not self._enabled:
+            return []
+        try:
+            cat, tid = resolve_category_and_thread(
+                *args,
+                category,
+                thread_id,
+                kwargs.get("category"),
+                kwargs.get("thread_id"),
+            )
+            categories_to_scan = [cat] if cat else sorted(ALLOWED_CATEGORIES)
+            output: list[dict[str, Any]] = []
+
+            for current_cat in categories_to_scan:
+                try:
+                    folder_id = self.get_or_create_thread_folder(current_cat, tid)
+                except Exception:
+                    continue
+
+                q = f"'{folder_id}' in parents and trashed = false"
+                res = self._service.files().list(
+                    q=q, spaces="drive", fields="files(id, name, mimeType, size, modifiedTime)"
+                ).execute()
+                files = res.get("files", [])
+
+                for f in files:
+                    if f.get("mimeType") == "application/vnd.google-apps.folder":
+                        sub_q = f"'{f['id']}' in parents and trashed = false"
+                        sub_res = self._service.files().list(
+                            q=sub_q, spaces="drive", fields="files(id, name, mimeType, size, modifiedTime)"
+                        ).execute()
+                        for sf in sub_res.get("files", []):
+                            if sf.get("mimeType") != "application/vnd.google-apps.folder":
+                                rel_name = f"{f['name']}/{sf['name']}"
+                                if not prefix or rel_name.startswith(prefix):
+                                    output.append({
+                                        "id": sf.get("id"),
+                                        "name": rel_name,
+                                        "size_bytes": int(sf.get("size", 0)),
+                                        "mime_type": sf.get("mimeType"),
+                                        "category": current_cat,
+                                        "thread_id": tid,
+                                        "modified": sf.get("modifiedTime"),
+                                    })
+                    else:
+                        if not prefix or f["name"].startswith(prefix):
+                            output.append({
+                                "id": f.get("id"),
+                                "name": f["name"],
+                                "size_bytes": int(f.get("size", 0)),
+                                "mime_type": f.get("mimeType"),
+                                "category": current_cat,
+                                "thread_id": tid,
+                                "modified": f.get("modifiedTime"),
+                            })
+            return output
+        except Exception as exc:
+            logger.warning("Failed to list files from Google Drive: %s", exc)
+            return []
+
+    def save_document(
+        self,
+        thread_id: str,
+        filename: str,
+        file_bytes: bytes,
+        vector_store: Any = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Save raw document, metadata JSON, and vector store to Google Drive."""
+        if not self._enabled:
+            return {"error": "Google Drive storage disabled", "success": False}
+
+        clean_name = Path(filename).name
+        upload_res = self.upload_bytes("documents", thread_id, clean_name, file_bytes)
+
+        faiss_saved = False
+        if vector_store is not None:
+            faiss_saved = self.save_vector_store(thread_id, vector_store)
+
+        meta_payload = {
+            "thread_id": thread_id,
+            "filename": clean_name,
+            "size_bytes": len(file_bytes),
+            "faiss_saved": faiss_saved,
+            **(metadata or {}),
+        }
+        self.upload_bytes(
+            "documents",
+            thread_id,
+            "metadata.json",
+            json.dumps(meta_payload, indent=2).encode("utf-8"),
+            mime_type="application/json",
+        )
+
+        return {
+            "thread_id": thread_id,
+            "filename": clean_name,
+            "file_id": upload_res.get("file_id"),
+            "faiss_persisted": faiss_saved,
+            "metadata": meta_payload,
+            "success": True,
+        }
+
+    def load_document_metadata(self, thread_id: str) -> dict[str, Any]:
+        """Load document metadata.json for the specified thread."""
+        if not self._enabled:
+            return {}
+        try:
+            data = self.download_bytes("documents", thread_id, "metadata.json")
+            if not data:
+                return {}
+            return json.loads(data.decode("utf-8"))
+        except Exception as exc:
+            logger.warning("Failed to load document metadata from Google Drive: %s", exc)
+            return {}
+
+    def save_vector_store(self, thread_id: str, vector_store: Any) -> bool:
+        """Persist FAISS index artifacts (index.faiss, index.pkl) to vectors/<thread_id>/ in Google Drive."""
+        if not self._enabled or vector_store is None:
+            return False
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                vector_store.save_local(temp_dir)
+                for fname in ("index.faiss", "index.pkl"):
+                    fpath = Path(temp_dir) / fname
+                    if fpath.exists():
+                        self.upload_bytes("vectors", thread_id, fname, fpath.read_bytes())
+            logger.info("Successfully persisted FAISS index to Google Drive for thread %s", thread_id)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to save FAISS vector store to Google Drive: %s", exc)
+            return False
+
+    def load_vector_store(self, thread_id: str, embeddings: Any) -> Optional[Any]:
+        """Download and reconstruct FAISS index from vectors/<thread_id>/ in Google Drive."""
+        if not self._enabled:
+            return None
+
+        try:
+            faiss_bytes = self.download_bytes("vectors", thread_id, "index.faiss")
+            pkl_bytes = self.download_bytes("vectors", thread_id, "index.pkl")
+            if not faiss_bytes or not pkl_bytes:
+                return None
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                (Path(temp_dir) / "index.faiss").write_bytes(faiss_bytes)
+                (Path(temp_dir) / "index.pkl").write_bytes(pkl_bytes)
+                from langchain_community.vectorstores import FAISS
+
+                store = FAISS.load_local(temp_dir, embeddings, allow_dangerous_deserialization=True)
+                return store
+        except Exception as exc:
+            logger.warning("Failed to load FAISS vector store from Google Drive: %s", exc)
+            return None
+
+    def has_thread_vector_store(self, thread_id: str) -> bool:
+        """Check if vector store exists for thread in Google Drive."""
+        if not self._enabled:
+            return False
+        return self.find_file("vectors", thread_id, "index.faiss") is not None
+
+    def health_check(self) -> bool:
+        """Verify Google Drive API connectivity."""
+        if not self._enabled or not self._service:
+            return False
+        try:
+            about = self._service.about().get(fields="user(emailAddress, displayName)").execute()
+            return bool(about and "user" in about)
+        except Exception as exc:
+            logger.warning("Google Drive health check failed: %s", exc)
+            return False

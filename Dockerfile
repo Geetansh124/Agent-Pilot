@@ -4,12 +4,16 @@ WORKDIR /app
 COPY requirements.api.txt ./
 RUN pip install --upgrade pip && pip install --no-cache-dir python-dotenv requests numpy==1.26.4 fastapi uvicorn[standard] python-multipart boto3 beautifulsoup4 python-docx
 RUN pip install --no-cache-dir langchain-community langchain-core langchain-huggingface langchain-nvidia-ai-endpoints langchain-text-splitters langgraph langgraph-checkpoint-sqlite pypdf ddgs
+RUN pip install --no-cache-dir google-api-python-client google-auth google-auth-httplib2 google-auth-oauthlib
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.2.2+cpu
 RUN pip install --no-cache-dir transformers==4.44.2 sentence-transformers==3.0.1 faiss-cpu
 COPY langraph_rag_backend.py api_server.py aws_storage.py agent_tools.py ./
+COPY storage/ ./storage/
 COPY src/ ./src/
+RUN python -c "import src; import src.tools; print('SRC IMPORT OK')" && \
+    python -c "import storage; print('STORAGE IMPORT OK')" && \
+    python -c "import api_server; print('API IMPORT OK')"
 RUN chmod -R 777 /app
 EXPOSE 7860
 EXPOSE 8000
 CMD exec uvicorn api_server:app --host 0.0.0.0 --port ${PORT:-7860}
-

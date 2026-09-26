@@ -9,10 +9,11 @@ from typing import Any, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from storage import storage
 from langraph_rag_backend import (
     chatbot,
     delete_thread,
@@ -114,8 +115,20 @@ def _chat_config(thread_id: str, response_format: str | None = None) -> dict:
 # Health
 # ---------------------------------------------------------------------------
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, Any]:
+    storage_status = "disabled"
+    if storage.enabled:
+        try:
+            storage_status = "connected" if storage.health_check() else "unhealthy"
+        except Exception:
+            storage_status = "error"
+    return {
+        "status": "ok",
+        "storage": {
+            "backend": getattr(storage, "backend_name", "unknown"),
+            "status": storage_status,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +336,42 @@ def list_thread_documents(thread_id: str) -> dict[str, Any]:
         "thread_id": thread_id,
         "documents": multi_doc_manager.get_documents(thread_id),
     }
+
+
+# ---------------------------------------------------------------------------
+# Persistent Files (Google Drive / Storage)
+# ---------------------------------------------------------------------------
+@app.get("/api/threads/{thread_id}/files")
+def list_thread_files(thread_id: str, category: Optional[str] = None) -> dict[str, Any]:
+    """List persistent files stored for a thread."""
+    if not storage.enabled:
+        return {"thread_id": thread_id, "files": []}
+    files = storage.list_files(thread_id=thread_id, category=category)
+    return {"thread_id": thread_id, "files": files}
+
+
+@app.get("/api/files/{thread_id}/{category}/{filename:path}")
+def download_file_by_category(thread_id: str, category: str, filename: str) -> Response:
+    """Download a persistent file by category and filename."""
+    if not storage.enabled:
+        raise HTTPException(status_code=503, detail="Storage backend is not configured.")
+    data = storage.download_bytes(thread_id=thread_id, category=category, filename=filename)
+    if data is None:
+        raise HTTPException(status_code=404, detail="File not found.")
+    from storage.base import guess_mime_type
+    mime_type = guess_mime_type(filename)
+    safe_name = os.path.basename(filename)
+    return Response(
+        content=data,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+    )
+
+
+@app.get("/api/files/{thread_id}/{filename:path}")
+def download_workspace_file(thread_id: str, filename: str) -> Response:
+    """Download a persistent workspace file by filename."""
+    return download_file_by_category(thread_id=thread_id, category="workspace", filename=filename)
 
 
 @app.post("/mcp")

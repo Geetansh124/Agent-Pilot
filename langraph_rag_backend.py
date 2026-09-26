@@ -14,8 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.tools import tool
-
-from aws_storage import storage
+from storage import storage
 from agent_tools import (
     _route_with_ruflo,
     analyze_tabular_data,
@@ -97,7 +96,7 @@ _THREAD_METADATA: Dict[str, dict] = {}
 
 
 def _get_retriever(thread_id: Optional[str]):
-    """Fetch hybrid retriever from multi_doc_manager or fallback to memory/S3."""
+    """Fetch hybrid retriever from multi_doc_manager or restore from storage backend."""
     if not thread_id:
         return None
     tid = str(thread_id)
@@ -109,6 +108,10 @@ def _get_retriever(thread_id: Optional[str]):
     if storage.enabled:
         retriever_store = storage.load_vector_store(tid, get_embeddings())
         if retriever_store is not None:
+            multi_doc_manager.register_vector_store(tid, retriever_store)
+            hybrid = multi_doc_manager.get_hybrid_retriever(tid)
+            if hybrid is not None:
+                return hybrid
             _THREAD_RETRIEVERS[tid] = retriever_store.as_retriever(
                 search_type="mmr", search_kwargs={"k": 5, "fetch_k": 15, "lambda_mult": 0.7}
             )
@@ -117,7 +120,7 @@ def _get_retriever(thread_id: Optional[str]):
 
 
 def ingest_pdf(file_bytes: bytes, thread_id: str, filename: Optional[str] = None) -> dict:
-    """Build a multi-document hybrid retriever for the uploaded document."""
+    """Build a multi-document hybrid retriever for the uploaded document and persist artifacts."""
     if not file_bytes:
         raise ValueError("No bytes received for ingestion.")
 
@@ -130,7 +133,8 @@ def ingest_pdf(file_bytes: bytes, thread_id: str, filename: Optional[str] = None
     )
     _THREAD_METADATA[str(thread_id)] = summary
     if storage.enabled:
-        storage.save_document(str(thread_id), name, file_bytes, None, summary)
+        vector_store = multi_doc_manager.get_vector_store(str(thread_id))
+        storage.save_document(str(thread_id), name, file_bytes, vector_store, summary)
     return summary
 
 
@@ -421,7 +425,14 @@ def retrieve_all_threads():
 
 
 def thread_has_document(thread_id: str) -> bool:
-    return multi_doc_manager.has_documents(thread_id) or str(thread_id) in _THREAD_RETRIEVERS
+    tid = str(thread_id)
+    if multi_doc_manager.has_documents(tid) or tid in _THREAD_RETRIEVERS:
+        return True
+    if storage.enabled:
+        meta = storage.load_document_metadata(tid)
+        if meta:
+            return True
+    return False
 
 
 def thread_document_metadata(thread_id: str) -> dict:

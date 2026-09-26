@@ -32,6 +32,36 @@ class MultiDocManager:
         """Return metadata for all documents registered for the thread."""
         return list(self._thread_docs.get(str(thread_id), []))
 
+    def get_vector_store(self, thread_id: str) -> Optional[FAISS]:
+        """Return the active FAISS vector store for the thread."""
+        return self._thread_stores.get(str(thread_id))
+
+    def register_vector_store(
+        self,
+        thread_id: str,
+        store: FAISS,
+        docs: Optional[list[dict[str, Any]]] = None,
+        chunks: Optional[list[Document]] = None,
+    ) -> None:
+        """Register or restore an existing FAISS vector store into the thread's cache."""
+        tid = str(thread_id)
+        self._thread_stores[tid] = store
+        if chunks is not None:
+            self._thread_chunks[tid] = list(chunks)
+        elif tid not in self._thread_chunks:
+            self._thread_chunks[tid] = []
+
+        if docs is not None:
+            self._thread_docs[tid] = list(docs)
+        elif tid not in self._thread_docs:
+            self._thread_docs[tid] = [{"doc_id": "restored", "filename": "restored_store"}]
+
+        # Create or update hybrid retriever
+        self._thread_retrievers[tid] = HybridRetriever(
+            vector_store=store,
+            all_documents=self._thread_chunks[tid],
+        )
+
     def get_hybrid_retriever(self, thread_id: str) -> Optional[HybridRetriever]:
         """Return the active hybrid retriever for the thread."""
         tid = str(thread_id)

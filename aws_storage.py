@@ -87,5 +87,5 @@ class AWSStorage:
             logger.warning("Failed to load vector store from AWS: %s", exc)
             return None
 
-
-storage = AWSStorage()
+# Unified storage instance from the storage abstraction package
+from storage import storage, get_storage_backend, StorageBackend
