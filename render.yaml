@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: docupilot-api
+    name: agent-pilot-api
     runtime: docker
     dockerfilePath: ./Dockerfile.api
     dockerContext: .

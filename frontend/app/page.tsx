@@ -19,7 +19,7 @@ import {
 
 type Message = { role: "user" | "assistant"; content: string };
 type Thread = { id: string; title: string; messages: Message[] };
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function Home() {
   const [threads, setThreads] = useState<Thread[]>([]);
