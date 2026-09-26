@@ -8,5 +8,6 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 RUN pip install --no-cache-dir transformers==4.44.2 sentence-transformers==3.0.1 faiss-cpu
 COPY langraph_rag_backend.py api_server.py aws_storage.py agent_tools.py ./
 COPY src/ ./src/
+RUN chmod -R 777 /app
 EXPOSE 8000
 CMD exec uvicorn api_server:app --host 0.0.0.0 --port ${PORT:-8000}

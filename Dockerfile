@@ -1,26 +1,15 @@
 FROM python:3.11-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    STREAMLIT_SERVER_HEADLESS=true \
-    STREAMLIT_SERVER_ENABLECORS=false \
-    STREAMLIT_SERVER_ENABLEXsrfProtection=true
-
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
+COPY requirements.api.txt ./
+RUN pip install --upgrade pip && pip install --no-cache-dir python-dotenv requests numpy==1.26.4 fastapi uvicorn[standard] python-multipart boto3 beautifulsoup4 python-docx
+RUN pip install --no-cache-dir langchain-community langchain-core langchain-huggingface langchain-nvidia-ai-endpoints langchain-text-splitters langgraph langgraph-checkpoint-sqlite pypdf ddgs
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.2.2+cpu
+RUN pip install --no-cache-dir transformers==4.44.2 sentence-transformers==3.0.1 faiss-cpu
+COPY langraph_rag_backend.py api_server.py aws_storage.py agent_tools.py ./
+COPY src/ ./src/
+RUN chmod -R 777 /app
+EXPOSE 7860
+EXPOSE 8000
+CMD exec uvicorn api_server:app --host 0.0.0.0 --port ${PORT:-7860}
 
-COPY requirements.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
-COPY langraph_rag_backend.py streamlit_rag_frontend.py run_chatbot.sh ./
-COPY .streamlit ./.streamlit
-
-RUN chmod +x run_chatbot.sh
-
-EXPOSE 8080
-CMD exec streamlit run streamlit_rag_frontend.py \
-    --server.address=0.0.0.0 \
-    --server.port=${PORT:-8080} \
-    --server.headless=true \
-    --server.enableCORS=false \
-    --server.enableXsrfProtection=true
