@@ -5,12 +5,15 @@ coordinates multi-agent delegation pipelines, and aggregates findings.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 from langchain_core.tools import tool
+
 
 from src.agents.coding_agent import coding_agent
 from src.agents.data_agent import data_analyst_agent
 from src.agents.research_agent import research_agent
+from src.agents.testing_agent import testing_agent
 from src.agents.shared_state import AgentRole, message_bus
 
 
@@ -21,15 +24,19 @@ class SupervisorAgent:
         self.name = name
 
     def classify_intent(self, task: str) -> AgentRole:
-        """Classify task into specialized domain."""
+        """Classify task into specialized domain using token boundaries."""
         t = task.lower()
-        if any(w in t for w in ("code", "function", "script", "python", "bug", "refactor", "syntax", "file", "write file")):
+        words = set(re.findall(r"\b\w+\b", t))
+        if any(w in words for w in ("test", "tests", "pytest", "coverage", "assert", "mock")) or "unit test" in t:
+            return AgentRole.TESTING
+        if any(w in words for w in ("code", "function", "script", "python", "bug", "refactor", "syntax", "file")) or "write file" in t:
             return AgentRole.CODER
-        if any(w in t for w in ("csv", "table", "sql", "database", "query", "columns", "rows", "statistics", "dataset")):
+        if any(w in words for w in ("csv", "table", "sql", "database", "query", "columns", "rows", "statistics", "dataset")):
             return AgentRole.DATA_ANALYST
-        if any(w in t for w in ("search", "find", "research", "scrape", "lookup", "who is", "what is the latest", "news")):
+        if any(w in words for w in ("search", "find", "research", "scrape", "lookup", "news")) or "who is" in t or "what is" in t:
             return AgentRole.RESEARCHER
         return AgentRole.GENERAL
+
 
     def delegate(
         self,
@@ -59,6 +66,9 @@ class SupervisorAgent:
             output = res.get("report", "")
         elif assigned_role == AgentRole.CODER:
             res = coding_agent.execute_task(task=clean_task, thread_id=thread_id, code=code, filename=filename)
+            output = str(res)
+        elif assigned_role == AgentRole.TESTING:
+            res = testing_agent.run_tests_or_generate(task=clean_task, filename=filename, thread_id=thread_id)
             output = str(res)
         elif assigned_role == AgentRole.DATA_ANALYST:
             res = data_analyst_agent.analyze(task=clean_task, csv_data=csv_data, sql_query=sql_query, thread_id=thread_id)

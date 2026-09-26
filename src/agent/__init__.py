@@ -5,6 +5,13 @@ from src.agent.planner import (
     reflect_on_goal,
     update_plan_step,
 )
+from src.agent.autopilot import (
+    AutopilotEngine,
+    AutopilotMission,
+    AutopilotStatus,
+    autopilot_engine,
+    run_autopilot_mission,
+)
 
 __all__ = [
     "create_plan",
@@ -16,4 +23,10 @@ __all__ = [
     "CriticAgent",
     "critic_agent",
     "evaluate_response",
+    "AutopilotEngine",
+    "AutopilotMission",
+    "AutopilotStatus",
+    "autopilot_engine",
+    "run_autopilot_mission",
 ]
+

@@ -148,6 +148,102 @@ class KnowledgeGraph:
                 self.add_edge(sub, rel, obj)
         return triples
 
+    def compute_pagerank(
+        self, damping: float = 0.85, max_iter: int = 30, tol: float = 1e-4
+    ) -> dict[str, float]:
+        """Compute PageRank scores for all nodes in the knowledge graph."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM graph_nodes")
+        node_ids = [r[0] for r in cursor.fetchall()]
+        n = len(node_ids)
+        if n == 0:
+            return {}
+
+        cursor.execute("SELECT source_id, target_id, weight FROM graph_edges")
+        edges = cursor.fetchall()
+
+        out_degree: dict[str, float] = {nid: 0.0 for nid in node_ids}
+        in_edges: dict[str, list[tuple[str, float]]] = {nid: [] for nid in node_ids}
+
+        for src, tgt, wt in edges:
+            if src in out_degree and tgt in in_edges:
+                out_degree[src] += wt
+                in_edges[tgt].append((src, wt))
+
+        # Initial uniform distribution
+        scores = {nid: 1.0 / n for nid in node_ids}
+
+        for _ in range(max_iter):
+            new_scores = {}
+            dangling_sum = sum(scores[nid] for nid in node_ids if out_degree[nid] == 0.0)
+            dangling_contrib = (damping * dangling_sum) / n
+
+            max_diff = 0.0
+            for nid in node_ids:
+                in_sum = sum(
+                    scores[src] * (wt / out_degree[src])
+                    for src, wt in in_edges[nid]
+                    if out_degree[src] > 0
+                )
+                rank = ((1.0 - damping) / n) + (damping * in_sum) + dangling_contrib
+                diff = abs(rank - scores[nid])
+                if diff > max_diff:
+                    max_diff = diff
+                new_scores[nid] = rank
+
+            scores = new_scores
+            if max_diff < tol:
+                break
+
+        # Normalize and round
+        total = sum(scores.values()) or 1.0
+        return {nid: round(s / total, 6) for nid, s in scores.items()}
+
+    def estimate_query_complexity(
+        self, root_entity: str, max_depth: int = 2
+    ) -> dict[str, Any]:
+        """Estimate the subgraph size and traversal cost before running a deep search."""
+        root = root_entity.strip().lower()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM graph_edges WHERE source_id = ? OR target_id = ?", (root, root))
+        degree = cursor.fetchone()[0]
+
+        # Estimated exponential branch count
+        estimated_nodes = min(1 + degree * max_depth * 3, 500)
+        risk_level = "high" if estimated_nodes > 200 else ("medium" if estimated_nodes > 50 else "low")
+
+        return {
+            "root_entity": root,
+            "immediate_degree": degree,
+            "max_depth": max_depth,
+            "estimated_nodes": estimated_nodes,
+            "complexity_risk": risk_level,
+            "safe_to_traverse": estimated_nodes <= 300,
+        }
+
+    def delta_update(
+        self, triples: list[tuple[str, str, str]]
+    ) -> dict[str, Any]:
+        """Incrementally apply a batch of entity-relation triples."""
+        added_nodes = 0
+        added_edges = 0
+        for sub, rel, obj in triples:
+            if not sub or not rel or not obj:
+                continue
+            self.add_edge(sub, rel, obj)
+            added_edges += 1
+
+        return {
+            "triples_processed": len(triples),
+            "edges_added": added_edges,
+            "status": "success",
+        }
+
+    def get_subgraph(self, entity: str, depth: int = 2) -> dict[str, Any]:
+        """Alias for query_subgraph matching GraphRAG API."""
+        return self.query_subgraph(entity=entity, max_depth=depth)
+
+
 
 knowledge_graph = KnowledgeGraph()
 

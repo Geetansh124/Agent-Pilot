@@ -6,6 +6,7 @@ from src.observability.cost import (
     cost_tracker,
     estimate_token_count,
 )
+from src.observability.tracing import AgentTracer, Span, agent_tracer
 
 __all__ = [
     "AuditLogger",
@@ -14,4 +15,8 @@ __all__ = [
     "cost_tracker",
     "estimate_token_count",
     "calculate_cost",
+    "AgentTracer",
+    "Span",
+    "agent_tracer",
 ]
+

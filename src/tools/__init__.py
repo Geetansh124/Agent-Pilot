@@ -14,6 +14,9 @@ from src.tools.file_tools import (
 )
 from src.tools.database_tool import query_database
 from src.tools.api_caller import call_api
+from src.tools.test_generator import generate_unit_tests, run_test_suite
+from src.tools.browser_tester import BrowserTester, browser_tester, test_web_endpoint
+from src.tools.doc_generator import DocGenerator, doc_generator, generate_code_docs
 
 __all__ = [
     "web_search",
@@ -25,4 +28,14 @@ __all__ = [
     "delete_workspace_file",
     "query_database",
     "call_api",
+    "generate_unit_tests",
+    "run_test_suite",
+    "BrowserTester",
+    "browser_tester",
+    "test_web_endpoint",
+    "DocGenerator",
+    "doc_generator",
+    "generate_code_docs",
 ]
+
+
