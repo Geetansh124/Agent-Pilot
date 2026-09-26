@@ -1,0 +1,31 @@
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+
+# Local runtime state
+chatbot.db*
+ruvector.db*
+streamlit.log
+
+frontend/node_modules
+frontend/.next
+*.log
+*-build.log
+*-push.log
+backend-build.log
+api-build-v2.log
+api-build-v3.log
+.claude/
+.swarm/
+.vscode/
+__pycache__/
+mcp-math-server/
+.venv/
+.venv-win/
+workspaces/
+.mcp.json
+.claude-flow/

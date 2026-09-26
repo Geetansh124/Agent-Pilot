@@ -1,0 +1,40 @@
+substitutions:
+  _REGION: us-central1
+  _REPOSITORY: chatbot
+  _SERVICE: chatbot
+  _IMAGE: chatbot
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --cpu=1
+      - --memory=2Gi
+      - --min-instances=0
+      - --max-instances=2
+      - --concurrency=10
+      - --timeout=300s
+      - --set-env-vars=LANGCHAIN_TRACING_V2=false
+      - --set-secrets=NVIDIA_API_KEY=NVIDIA_API_KEY:latest,ALPHAVANTAGE_API_KEY=ALPHAVANTAGE_API_KEY:latest,LANGCHAIN_API_KEY=LANGCHAIN_API_KEY:latest
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
