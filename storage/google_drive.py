@@ -52,9 +52,42 @@ class GoogleDriveStorage(StorageBackend):
         self._init_service()
 
     def _init_service(self) -> None:
-        """Initialize Google Drive service client safely without throwing on missing config."""
+        """Initialize Google Drive service client via User OAuth2 (refresh token) or Service Account."""
+        # 1. Try User OAuth2 Credentials (bypasses Service Account 0-byte quota restrictions)
+        oauth_json = os.getenv("GOOGLE_DRIVE_OAUTH_JSON")
+        client_id = os.getenv("GOOGLE_DRIVE_CLIENT_ID")
+        client_secret = os.getenv("GOOGLE_DRIVE_CLIENT_SECRET")
+        refresh_token = os.getenv("GOOGLE_DRIVE_REFRESH_TOKEN")
+
+        if oauth_json or (client_id and client_secret and refresh_token):
+            try:
+                from google.oauth2.credentials import Credentials
+                from google.auth.transport.requests import Request
+                from googleapiclient.discovery import build
+
+                if oauth_json:
+                    info = self._parse_credentials_payload(oauth_json)
+                    credentials = Credentials.from_authorized_user_info(info, scopes=SCOPES)
+                else:
+                    credentials = Credentials(
+                        None,
+                        refresh_token=refresh_token,
+                        token_uri="https://oauth2.googleapis.com/token",
+                        client_id=client_id,
+                        client_secret=client_secret,
+                        scopes=SCOPES,
+                    )
+                credentials.refresh(Request())
+                self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+                self._enabled = True
+                logger.info("Google Drive storage initialized successfully via User OAuth2 (personal quota active).")
+                return
+            except Exception as exc:
+                logger.warning("Failed to initialize Google Drive via OAuth2: %s", exc)
+
+        # 2. Try Service Account Credentials
         if not self._raw_creds:
-            logger.info("Google Drive storage disabled: GOOGLE_SERVICE_ACCOUNT_JSON not provided.")
+            logger.info("Google Drive storage disabled: No OAuth2 or Service Account credentials provided.")
             self._enabled = False
             return
 
@@ -68,7 +101,7 @@ class GoogleDriveStorage(StorageBackend):
             )
             self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
             self._enabled = True
-            logger.info("Google Drive storage initialized successfully.")
+            logger.info("Google Drive storage initialized successfully via Service Account.")
         except Exception as exc:
             # Never print secrets or full payload
             logger.warning("Failed to initialize Google Drive storage: %s", exc)
@@ -120,7 +153,13 @@ class GoogleDriveStorage(StorageBackend):
         # Search for existing 'Agent-Pilot' folder in service account root
         escaped_name = self._escape_query_str("Agent-Pilot")
         q = f"'root' in parents and name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        res = self._service.files().list(q=q, spaces="drive", fields="files(id)").execute()
+        res = self._service.files().list(
+            q=q,
+            spaces="drive",
+            fields="files(id)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
         files = res.get("files", [])
         if files:
             folder_id = files[0]["id"]
@@ -130,7 +169,11 @@ class GoogleDriveStorage(StorageBackend):
                 "mimeType": "application/vnd.google-apps.folder",
                 "parents": ["root"],
             }
-            folder = self._service.files().create(body=meta, fields="id").execute()
+            folder = self._service.files().create(
+                body=meta,
+                fields="id",
+                supportsAllDrives=True,
+            ).execute()
             folder_id = folder.get("id")
 
         self._folder_cache["root"] = folder_id
@@ -144,7 +187,13 @@ class GoogleDriveStorage(StorageBackend):
 
         escaped_name = self._escape_query_str(name)
         q = f"'{parent_id}' in parents and name = '{escaped_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        res = self._service.files().list(q=q, spaces="drive", fields="files(id)").execute()
+        res = self._service.files().list(
+            q=q,
+            spaces="drive",
+            fields="files(id)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
         files = res.get("files", [])
 
         if files:
@@ -155,7 +204,11 @@ class GoogleDriveStorage(StorageBackend):
                 "mimeType": "application/vnd.google-apps.folder",
                 "parents": [parent_id],
             }
-            folder = self._service.files().create(body=meta, fields="id").execute()
+            folder = self._service.files().create(
+                body=meta,
+                fields="id",
+                supportsAllDrives=True,
+            ).execute()
             folder_id = folder.get("id")
 
         self._folder_cache[cache_key] = folder_id
@@ -217,7 +270,13 @@ class GoogleDriveStorage(StorageBackend):
         # Search if file already exists in target folder to update in-place
         escaped_name = self._escape_query_str(leaf_name)
         q = f"'{folder_id}' in parents and name = '{escaped_name}' and trashed = false"
-        res = self._service.files().list(q=q, spaces="drive", fields="files(id)").execute()
+        res = self._service.files().list(
+            q=q,
+            spaces="drive",
+            fields="files(id)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
         files = res.get("files", [])
 
         if files:
@@ -226,6 +285,7 @@ class GoogleDriveStorage(StorageBackend):
                 fileId=file_id,
                 media_body=media,
                 fields="id, name, size, mimeType, modifiedTime",
+                supportsAllDrives=True,
             ).execute()
             item = updated
         else:
@@ -234,6 +294,7 @@ class GoogleDriveStorage(StorageBackend):
                 body=meta,
                 media_body=media,
                 fields="id, name, size, mimeType, modifiedTime",
+                supportsAllDrives=True,
             ).execute()
             item = created
 
@@ -268,7 +329,7 @@ class GoogleDriveStorage(StorageBackend):
             from googleapiclient.http import MediaIoBaseDownload
 
             file_id = file_meta["id"]
-            request = self._service.files().get_media(fileId=file_id)
+            request = self._service.files().get_media(fileId=file_id, supportsAllDrives=True)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, request)
             done = False
@@ -294,7 +355,11 @@ class GoogleDriveStorage(StorageBackend):
             escaped = self._escape_query_str(leaf_name)
             q = f"'{folder_id}' in parents and name = '{escaped}' and trashed = false"
             res = self._service.files().list(
-                q=q, spaces="drive", fields="files(id, name, mimeType, size, modifiedTime)"
+                q=q,
+                spaces="drive",
+                fields="files(id, name, mimeType, size, modifiedTime)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
             ).execute()
             files = res.get("files", [])
             return files[0] if files else None
@@ -317,7 +382,7 @@ class GoogleDriveStorage(StorageBackend):
             file_meta = self.find_file(cat or "workspace", tid, filename)
             if not file_meta or not file_meta.get("id"):
                 return False
-            self._service.files().delete(fileId=file_meta["id"]).execute()
+            self._service.files().delete(fileId=file_meta["id"], supportsAllDrives=True).execute()
             return True
         except Exception as exc:
             logger.warning("Failed to delete '%s' from Google Drive: %s", filename, exc)
@@ -353,7 +418,11 @@ class GoogleDriveStorage(StorageBackend):
 
                 q = f"'{folder_id}' in parents and trashed = false"
                 res = self._service.files().list(
-                    q=q, spaces="drive", fields="files(id, name, mimeType, size, modifiedTime)"
+                    q=q,
+                    spaces="drive",
+                    fields="files(id, name, mimeType, size, modifiedTime)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 ).execute()
                 files = res.get("files", [])
 
@@ -361,7 +430,11 @@ class GoogleDriveStorage(StorageBackend):
                     if f.get("mimeType") == "application/vnd.google-apps.folder":
                         sub_q = f"'{f['id']}' in parents and trashed = false"
                         sub_res = self._service.files().list(
-                            q=sub_q, spaces="drive", fields="files(id, name, mimeType, size, modifiedTime)"
+                            q=sub_q,
+                            spaces="drive",
+                            fields="files(id, name, mimeType, size, modifiedTime)",
+                            supportsAllDrives=True,
+                            includeItemsFromAllDrives=True,
                         ).execute()
                         for sf in sub_res.get("files", []):
                             if sf.get("mimeType") != "application/vnd.google-apps.folder":
@@ -499,8 +572,78 @@ class GoogleDriveStorage(StorageBackend):
         if not self._enabled or not self._service:
             return False
         try:
+            root_id = self._root_folder_id or self._get_root_id()
+            if root_id:
+                res = self._service.files().get(
+                    fileId=root_id,
+                    fields="id, name, trashed",
+                    supportsAllDrives=True,
+                ).execute()
+                return bool(res and res.get("id"))
             about = self._service.about().get(fields="user(emailAddress, displayName)").execute()
             return bool(about and "user" in about)
         except Exception as exc:
             logger.warning("Google Drive health check failed: %s", exc)
             return False
+
+    def sync_database(self, db_path: str = "chatbot.db") -> bool:
+        """Safely snapshot and upload SQLite database file to Google Drive under database/system/."""
+        if not self._enabled:
+            return False
+        p = Path(db_path)
+        if not p.exists():
+            return False
+        try:
+            import sqlite3
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                source = sqlite3.connect(str(p))
+                dest = sqlite3.connect(tmp_path)
+                source.backup(dest)
+                source.close()
+                dest.close()
+                data = Path(tmp_path).read_bytes()
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+
+            res = self.upload_bytes(
+                category="database",
+                thread_id="system",
+                filename=p.name,
+                file_bytes=data,
+            )
+            logger.info("Synced database '%s' to Google Drive: %s", db_path, res.get("file_id"))
+            return bool(res.get("success"))
+        except Exception as exc:
+            logger.warning("Failed to sync database '%s' to Google Drive: %s", db_path, exc)
+            return False
+
+    def restore_database(self, db_path: str = "chatbot.db") -> bool:
+        """Download latest SQLite database snapshot from Google Drive under database/system/."""
+        if not self._enabled:
+            return False
+        try:
+            p = Path(db_path)
+            data = self.download_bytes(category="database", thread_id="system", filename=p.name)
+            if not data:
+                return False
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+            logger.info("Successfully restored database '%s' from Google Drive (%d bytes)", db_path, len(data))
+            return True
+        except Exception as exc:
+            logger.warning("Failed to restore database '%s' from Google Drive: %s", db_path, exc)
+            return False
+
+    def sync_memory(self, memory_path: str = "memory.db") -> bool:
+        """Sync long-term memory SQLite store to Google Drive."""
+        return self.sync_database(memory_path)
+
+    def restore_memory(self, memory_path: str = "memory.db") -> bool:
+        """Restore long-term memory SQLite store from Google Drive."""
+        return self.restore_database(memory_path)

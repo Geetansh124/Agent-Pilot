@@ -57,30 +57,34 @@ Agent-Pilot separates structured relational application state from persistent fi
 
 ---
 
-## Step 4: Create and Share the Agent-Pilot Drive Folder
+## Step 4: Create a Google Workspace "Shared Drive" and Add Service Account
 
-> **IMPORTANT**: A service account cannot see your personal Google Drive files unless you explicitly share a folder with its email address!
+> **CRITICAL QUOTA RULE**: Standalone Google Service Accounts have **0 MB personal storage quota**.
+> You **MUST** use a **Shared Drive** (Team Drive), where files belong to the organization/Shared Drive rather than the service account. Creating a regular folder in personal "My Drive" will fail with `403 storageQuotaExceeded`.
 
 1. Open [Google Drive](https://drive.google.com/).
-2. Create a new folder named `Agent-Pilot` (or any name you prefer).
-3. Right-click the folder and select **Share** > **Share**.
-4. In the "Add people and groups" field, paste the **service account email address** copied in Step 2:
-   - Example: `agent-pilot-storage@agent-pilot-xxxxxx.iam.gserviceaccount.com`
-5. Set permissions to **Editor** (this allows the service account to create folders and upload/download files).
-6. Uncheck "Notify people" (service accounts do not have an inbox) and click **Share** / **Save**.
+2. In the left navigation sidebar, click on **Shared drives** (under "My Drive").
+3. Click **+ New** (or right-click in the empty area) to create a new Shared Drive named **Agent-Pilot**.
+4. Open your new `Agent-Pilot` Shared Drive and click **Manage members** in the upper right.
+5. In the "Add people, groups, and calendar events" field, paste your **service account email**:
+   ```
+   agent-pilot-storage@my-docupilot-project.iam.gserviceaccount.com
+   ```
+6. Set permissions to **Content manager** (or **Manager**). This allows the service account to create folders, upload files, and manage artifacts.
+7. Uncheck "Notify people" and click **Send** / **Save**.
 
 ---
 
-## Step 5: Obtain the Google Drive Folder ID
+## Step 5: Obtain the Shared Drive ID
 
-1. Double-click to open your newly created `Agent-Pilot` folder in Google Drive.
+1. Open your newly created `Agent-Pilot` Shared Drive in the browser.
 2. Look at the browser URL bar. The URL will look like:
    ```
-   https://drive.google.com/drive/folders/1aBcDeFgHiJkLmNoPqRsTuVwXyZ012345
+   https://drive.google.com/drive/folders/1s1Mak4AY88adi8hHg5by-YIHY1f4nEqs
    ```
-3. The long alphanumeric string after `/folders/` is your **Folder ID**:
-   - Example: `1aBcDeFgHiJkLmNoPqRsTuVwXyZ012345`
-4. Copy this Folder ID.
+3. The alphanumeric string after `/folders/` is your **Shared Drive ID**:
+   - Example: `1s1Mak4AY88adi8hHg5by-YIHY1f4nEqs`
+4. Copy this ID and use it as `GOOGLE_DRIVE_FOLDER_ID`.
 
 ---
 

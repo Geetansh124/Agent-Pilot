@@ -225,6 +225,9 @@ def _route_with_ruflo(task: str) -> dict:
 
     extra_paths = [
         os.path.dirname(shutil.which("node") or ""),
+        r"C:\Program Files\nodejs",
+        r"C:\Program Files (x86)\nodejs",
+        os.path.expanduser(r"~\AppData\Roaming\npm"),
         os.path.expanduser("~/.local/node-v20.20.2/current/bin"),
         "/usr/local/bin",
         "/usr/bin",
@@ -234,7 +237,7 @@ def _route_with_ruflo(task: str) -> dict:
     full_path = os.pathsep.join(dict.fromkeys(path_dirs))
     env = {**os.environ, "PATH": full_path}
 
-    npx_bin = shutil.which("npx", path=full_path) or "npx"
+    npx_bin = shutil.which("npx.cmd", path=full_path) or shutil.which("npx", path=full_path) or "npx"
     command = [
         npx_bin,
         "--yes",
@@ -255,6 +258,7 @@ def _route_with_ruflo(task: str) -> dict:
             text=True,
             timeout=30,
             check=False,
+            shell=(os.name == "nt"),
         )
     except subprocess.TimeoutExpired:
         return {"error": "Ruflo routing timed out after 30 seconds.", "task": task}

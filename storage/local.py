@@ -285,3 +285,35 @@ class LocalStorageBackend(StorageBackend):
         except Exception as exc:
             logger.warning("Local health check failed: %s", exc)
             return False
+
+    def sync_database(self, db_path: str = "chatbot.db") -> bool:
+        """Backup local database file under database/system/ in storage."""
+        p = Path(db_path)
+        if not p.exists():
+            return False
+        try:
+            return bool(self.upload_bytes("database", "system", p.name, p.read_bytes()).get("success"))
+        except Exception as exc:
+            logger.warning("Local sync database failed: %s", exc)
+            return False
+
+    def restore_database(self, db_path: str = "chatbot.db") -> bool:
+        """Restore local database file from database/system/ in storage."""
+        try:
+            p = Path(db_path)
+            data = self.download_bytes("database", "system", p.name)
+            if not data:
+                return False
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+            return True
+        except Exception as exc:
+            logger.warning("Local restore database failed: %s", exc)
+            return False
+
+    def sync_memory(self, memory_path: str = "memory.db") -> bool:
+        return self.sync_database(memory_path)
+
+    def restore_memory(self, memory_path: str = "memory.db") -> bool:
+        return self.restore_database(memory_path)
+

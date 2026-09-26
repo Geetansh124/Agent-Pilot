@@ -10,7 +10,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-ALLOWED_CATEGORIES = frozenset({"documents", "workspace", "vectors", "exports", "attachments", "audio"})
+ALLOWED_CATEGORIES = frozenset({"documents", "workspace", "vectors", "exports", "attachments", "audio", "database", "memory"})
 
 
 class StoragePathError(ValueError, PermissionError):

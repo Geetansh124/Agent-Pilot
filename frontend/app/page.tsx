@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   FileText,
   Plus,
@@ -278,126 +280,133 @@ export default function Home() {
   // ----------------------------- render ----------------------------------
 
   return (
-    <main className="flex min-h-screen bg-[#090a10]">
+    <main className="flex h-screen w-full overflow-hidden bg-[#090a10]">
       {sidebarOpen && (
-        <aside className="w-[310px] shrink-0 border-r border-white/10 bg-[#11131d] p-5 max-md:fixed max-md:inset-y-0 max-md:z-20">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xl font-bold tracking-tight">
-                Agent-<span className="text-violet-400">Pilot</span>
+        <aside className="flex h-screen w-[310px] shrink-0 flex-col border-r border-white/10 bg-[#11131d] max-md:fixed max-md:inset-y-0 max-md:z-20">
+          {/* Top fixed controls in sidebar */}
+          <div className="shrink-0 p-5 pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xl font-bold tracking-tight">
+                  Agent-<span className="text-violet-400">Pilot</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  Your intelligent document workspace
+                </p>
               </div>
-              <p className="mt-1 text-xs text-slate-400">
-                Your intelligent document workspace
-              </p>
+              <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
-            <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
-              <X size={18} />
+
+            <button onClick={() => newChat()} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold transition hover:border-violet-400 hover:bg-violet-400/10">
+              <Plus size={17} /> New chat
             </button>
-          </div>
 
-          <button onClick={() => newChat()} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold transition hover:border-violet-400 hover:bg-violet-400/10">
-            <Plus size={17} /> New chat
-          </button>
+            <div className="mt-6 text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">Knowledge source</div>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="mt-2.5 flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-violet-400/60 bg-violet-400/10 px-4 py-5 text-sm text-slate-300 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Upload size={19} className={`text-violet-300 ${uploading ? "animate-pulse" : ""}`} />
+              <span className="font-medium text-xs">{uploading ? "Indexing document…" : document ? `${document.filename}` : "Upload document"}</span>
+              <span className="text-[11px] text-slate-500">PDF, DOCX, CSV, TXT up to 200 MB</span>
+            </button>
+            <input
+              ref={fileRef}
+              className="hidden"
+              type="file"
+              accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,application/pdf"
+              onChange={(e) => {
+                const selected = e.target.files?.[0];
+                if (selected) void upload(selected);
+                e.target.value = "";
+              }}
+            />
 
-          <div className="mt-8 text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">Knowledge source</div>
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="mt-3 flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-violet-400/60 bg-violet-400/10 px-4 py-6 text-sm text-slate-300 transition hover:bg-violet-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Upload size={20} className={`text-violet-300 ${uploading ? "animate-pulse" : ""}`} />
-            {uploading ? "Indexing document…" : document ? `${document.filename}` : "Upload document"}
-            <span className="text-xs text-slate-500">PDF, DOCX, CSV, TXT up to 200 MB</span>
-          </button>
-          <input
-            ref={fileRef}
-            className="hidden"
-            type="file"
-            accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,application/pdf"
-            onChange={(e) => {
-              const selected = e.target.files?.[0];
-              if (selected) void upload(selected);
-              e.target.value = "";
-            }}
-          />
-
-          {document && (
-            <div className="mt-3 rounded-lg bg-emerald-400/10 p-3 text-xs text-emerald-300">
-              <FileText size={14} className="mb-1" /> {String(document.chunks)} chunks · {String(document.documents)} pages
-            </div>
-          )}
-
-          <div className="mt-8 text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">
-            Recent conversations
-          </div>
-          <div className="mt-3 space-y-1">
-            {threads.map((thread) => (
-              <div
-                key={thread.id}
-                className={`group flex items-center rounded-lg transition ${
-                  thread.id === threadId ? "bg-violet-400/15 text-violet-200" : "text-slate-400 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                {editingThreadId === thread.id ? (
-                  <div className="flex flex-1 items-center px-2 py-1">
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void renameThread(thread.id, editTitle);
-                        if (e.key === "Escape") setEditingThreadId(null);
-                      }}
-                      autoFocus
-                      className="min-w-0 flex-1 rounded bg-black/40 px-2 py-1 text-xs text-white outline-none ring-1 ring-violet-400"
-                    />
-                    <button
-                      onClick={() => void renameThread(thread.id, editTitle)}
-                      className="ml-1 p-1 text-emerald-400 hover:text-emerald-300"
-                      title="Save"
-                    >
-                      <Check size={13} />
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => selectThread(thread)}
-                      className="min-w-0 flex-1 truncate px-3 py-2.5 text-left text-sm"
-                    >
-                      {thread.title || "New chat"}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingThreadId(thread.id);
-                        setEditTitle(thread.title || "");
-                      }}
-                      title="Rename thread"
-                      className="hidden shrink-0 rounded p-1 text-slate-500 transition hover:bg-violet-500/20 hover:text-violet-300 group-hover:block"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteThread(thread.id);
-                      }}
-                      title="Delete thread"
-                      className="mr-2 hidden shrink-0 rounded p-1 text-slate-500 transition hover:bg-red-500/20 hover:text-red-400 group-hover:block"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </>
-                )}
+            {document && (
+              <div className="mt-2.5 rounded-lg bg-emerald-400/10 p-2.5 text-xs text-emerald-300">
+                <FileText size={13} className="mb-0.5 inline-block mr-1" /> {String(document.chunks)} chunks · {String(document.documents)} pages
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* Independently scrollable recent conversations list */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">
+              Recent conversations
+            </div>
+            <div className="mt-3 space-y-1">
+              {threads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className={`group flex items-center rounded-lg transition ${
+                    thread.id === threadId ? "bg-violet-400/15 text-violet-200" : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  {editingThreadId === thread.id ? (
+                    <div className="flex flex-1 items-center px-2 py-1">
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void renameThread(thread.id, editTitle);
+                          if (e.key === "Escape") setEditingThreadId(null);
+                        }}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded bg-black/40 px-2 py-1 text-xs text-white outline-none ring-1 ring-violet-400"
+                      />
+                      <button
+                        onClick={() => void renameThread(thread.id, editTitle)}
+                        className="ml-1 p-1 text-emerald-400 hover:text-emerald-300"
+                        title="Save"
+                      >
+                        <Check size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => selectThread(thread)}
+                        className="min-w-0 flex-1 truncate px-3 py-2.5 text-left text-sm"
+                      >
+                        {thread.title || "New chat"}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingThreadId(thread.id);
+                          setEditTitle(thread.title || "");
+                        }}
+                        title="Rename thread"
+                        className="hidden shrink-0 rounded p-1 text-slate-500 transition hover:bg-violet-500/20 hover:text-violet-300 group-hover:block"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteThread(thread.id);
+                        }}
+                        title="Delete thread"
+                        className="mr-2 hidden shrink-0 rounded p-1 text-slate-500 transition hover:bg-red-500/20 hover:text-red-400 group-hover:block"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </aside>
       )}
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+      {/* Main chat section with fixed header, independently scrollable messages, and fixed input bar */}
+      <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="shrink-0 flex items-center justify-between border-b border-white/10 bg-[#090a10] px-6 py-4">
           <button className="md:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu size={20} />
           </button>
@@ -407,72 +416,111 @@ export default function Home() {
           </div>
         </header>
 
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-5 py-12">
-          <div className="mb-10 flex items-center gap-3">
-            <div className="rounded-xl bg-violet-400/15 p-3 text-violet-300"><Sparkles size={22} /></div>
-            <div>
-              <h1 className="text-4xl font-bold tracking-tight">What would you like to explore?</h1>
-              <p className="mt-2 text-slate-400">Ask questions, analyze documents, or use your AI tools.</p>
-            </div>
-          </div>
-
-          <div className="flex-1 space-y-6">
-            {messages.length === 0 && (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  "Summarize my PDF",
-                  "Search web for latest tech news",
-                  "Run Python to calculate compound interest",
-                  "What tools can you use?",
-                ].map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => setInput(prompt)}
-                    className="rounded-xl border border-white/10 bg-white/[.03] p-4 text-left text-sm text-slate-300 transition hover:border-violet-400/50 hover:bg-violet-400/10"
-                  >
-                    {prompt}
-                  </button>
-                ))}
+        {/* Scrollable messages container */}
+        <div className="flex-1 overflow-y-auto px-5 py-8">
+          <div className="mx-auto flex w-full max-w-4xl flex-col">
+            <div className="mb-8 flex items-center gap-3">
+              <div className="rounded-xl bg-violet-400/15 p-3 text-violet-300"><Sparkles size={22} /></div>
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">What would you like to explore?</h1>
+                <p className="mt-1 text-sm text-slate-400">Ask questions, analyze documents, or use your AI tools.</p>
               </div>
-            )}
+            </div>
 
-            {messages.map((message, index) => {
-              const isLastAssistant = message.role === "assistant" && index === messages.length - 1;
-              const isUser = message.role === "user";
-              return (
-                <div key={index} className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
-                  <div className={`flex max-w-[80%] gap-3 rounded-2xl px-4 py-3 ${isUser ? "bg-violet-500 text-white" : "border border-white/10 bg-white/[.04] text-slate-200"}`}>
-                    {isUser ? <User size={17} className="mt-1 shrink-0" /> : <Bot size={17} className="mt-1 shrink-0 text-violet-300" />}
-                    <div className="whitespace-pre-wrap text-sm leading-6">
-                      {message.content}
-                      {isLastAssistant && streaming && <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded-sm bg-violet-400 align-middle" />}
+            <div className="space-y-6">
+              {messages.length === 0 && (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    "Summarize my PDF",
+                    "Search web for latest tech news",
+                    "Run Python to calculate compound interest",
+                    "What tools can you use?",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      onClick={() => setInput(prompt)}
+                      className="rounded-xl border border-white/10 bg-white/[.03] p-4 text-left text-sm text-slate-300 transition hover:border-violet-400/50 hover:bg-violet-400/10"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {messages.map((message, index) => {
+                const isLastAssistant = message.role === "assistant" && index === messages.length - 1;
+                const isUser = message.role === "user";
+                return (
+                  <div key={index} className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+                    <div className={`flex max-w-[80%] gap-3 rounded-2xl px-4 py-3 ${isUser ? "bg-violet-500 text-white" : "border border-white/10 bg-white/[.04] text-slate-200"}`}>
+                      {isUser ? <User size={17} className="mt-1 shrink-0" /> : <Bot size={17} className="mt-1 shrink-0 text-violet-300" />}
+                      <div className="min-w-0 flex-1 text-sm leading-6">
+                        {isUser ? (
+                          <div className="whitespace-pre-wrap">{message.content}</div>
+                        ) : (
+                          <div className="prose prose-invert max-w-none space-y-2 text-slate-200">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                h1: ({ ...props }) => <h1 className="mb-2 mt-4 text-lg font-bold text-white" {...props} />,
+                                h2: ({ ...props }) => <h2 className="mb-2 mt-3 text-base font-bold text-white" {...props} />,
+                                h3: ({ ...props }) => <h3 className="mb-1 mt-2 text-sm font-semibold text-violet-200" {...props} />,
+                                p: ({ ...props }) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+                                ul: ({ ...props }) => <ul className="mb-2 list-disc pl-5 space-y-1" {...props} />,
+                                ol: ({ ...props }) => <ol className="mb-2 list-decimal pl-5 space-y-1" {...props} />,
+                                li: ({ ...props }) => <li className="leading-relaxed" {...props} />,
+                                strong: ({ ...props }) => <strong className="font-semibold text-white" {...props} />,
+                                code: ({ className, children, ...props }) => {
+                                  const isInline = !className && typeof children === "string" && !children.includes("\n");
+                                  return isInline ? (
+                                    <code className="rounded bg-violet-950/60 px-1.5 py-0.5 font-mono text-xs font-medium text-violet-300 border border-violet-800/40" {...props}>
+                                      {children}
+                                    </code>
+                                  ) : (
+                                    <code className="block overflow-x-auto rounded-lg bg-slate-950/80 p-3 font-mono text-xs text-slate-200 border border-white/10 my-2" {...props}>
+                                      {children}
+                                    </code>
+                                  );
+                                },
+                                a: ({ ...props }) => <a className="text-violet-400 underline hover:text-violet-300" target="_blank" rel="noopener noreferrer" {...props} />,
+                              }}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                        {isLastAssistant && streaming && <span className="ml-1 inline-block h-4 w-2 animate-pulse rounded-sm bg-violet-400 align-middle" />}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-            {activeTool && (
-              <div className="flex justify-start gap-3">
-                <div className="flex items-center gap-2 rounded-2xl border border-violet-400/30 bg-violet-400/5 px-4 py-2 text-xs text-violet-300">
-                  <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-violet-400" />
-                  Using <code className="font-mono font-bold">{activeTool}</code>…
+              {activeTool && (
+                <div className="flex justify-start gap-3">
+                  <div className="flex items-center gap-2 rounded-2xl border border-violet-400/30 bg-violet-400/5 px-4 py-2 text-xs text-violet-300">
+                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-violet-400" />
+                    Using <code className="font-mono font-bold">{activeTool}</code>…
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {busy && !streaming && !activeTool && (
-              <div className="flex justify-start gap-3">
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 text-sm text-slate-400">
-                  <Bot size={17} className="shrink-0 animate-pulse text-violet-300" />
-                  <span className="animate-pulse">Thinking…</span>
+              {busy && !streaming && !activeTool && (
+                <div className="flex justify-start gap-3">
+                  <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3 text-sm text-slate-400">
+                    <Bot size={17} className="shrink-0 animate-pulse text-violet-300" />
+                    <span className="animate-pulse">Thinking…</span>
+                  </div>
                 </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
+              )}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
+        </div>
 
-          <form onSubmit={send} className="mt-10 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#151824] p-2 shadow-2xl shadow-black/20">
+        {/* Fixed bottom input form */}
+        <div className="shrink-0 border-t border-white/10 bg-[#090a10]/95 px-5 py-4 backdrop-blur-md">
+          <form onSubmit={send} className="mx-auto flex w-full max-w-4xl items-center gap-3 rounded-2xl border border-white/10 bg-[#151824] p-2 shadow-2xl shadow-black/20">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}

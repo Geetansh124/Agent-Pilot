@@ -7,7 +7,7 @@ import uuid
 from collections import defaultdict
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -112,6 +112,33 @@ def _chat_config(thread_id: str, response_format: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Storage & Database Synchronization Lifecycle
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+def startup_storage_restore() -> None:
+    """Restore SQLite database and long-term memory store from persistent storage on startup."""
+    try:
+        if hasattr(storage, "restore_database"):
+            storage.restore_database("chatbot.db")
+        if hasattr(storage, "restore_memory"):
+            storage.restore_memory("memory.db")
+    except Exception as exc:
+        logger.warning("Startup storage restore encountered warning: %s", exc)
+
+
+@app.on_event("shutdown")
+def shutdown_storage_sync() -> None:
+    """Sync latest SQLite database and long-term memory store to persistent storage on shutdown."""
+    try:
+        if hasattr(storage, "sync_database"):
+            storage.sync_database("chatbot.db")
+        if hasattr(storage, "sync_memory"):
+            storage.sync_memory("memory.db")
+    except Exception as exc:
+        logger.warning("Shutdown storage sync encountered warning: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 @app.get("/health")
@@ -169,6 +196,11 @@ def update_thread(thread_id: str, body: UpdateThreadRequest) -> dict[str, Any]:
     if not clean_title:
         raise HTTPException(status_code=422, detail="Title cannot be empty.")
     if set_thread_title(thread_id, clean_title):
+        if hasattr(storage, "sync_database"):
+            try:
+                storage.sync_database("chatbot.db")
+            except Exception:
+                pass
         return {"id": thread_id, "title": clean_title}
     raise HTTPException(status_code=500, detail="Failed to update thread title.")
 
@@ -176,6 +208,11 @@ def update_thread(thread_id: str, body: UpdateThreadRequest) -> dict[str, Any]:
 @app.delete("/api/threads/{thread_id}")
 def remove_thread(thread_id: str) -> dict[str, Any]:
     if delete_thread(thread_id):
+        if hasattr(storage, "sync_database"):
+            try:
+                storage.sync_database("chatbot.db")
+            except Exception:
+                pass
         return {"deleted": True, "thread_id": thread_id}
     raise HTTPException(status_code=404, detail="Thread not found or already deleted.")
 
@@ -184,7 +221,7 @@ def remove_thread(thread_id: str) -> dict[str, Any]:
 # Chat — batch (original, kept for backward compatibility)
 # ---------------------------------------------------------------------------
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: ChatRequest, req: Request) -> ChatResponse:
+def chat(request: ChatRequest, req: Request, background_tasks: BackgroundTasks) -> ChatResponse:
     _check_rate_limit(req.client.host if req.client else "unknown")
     is_safe, reason = validate_input_prompt(request.message)
     if not is_safe:
@@ -220,6 +257,9 @@ def chat(request: ChatRequest, req: Request) -> ChatResponse:
     dur_ms = (time.time() - t0) * 1000
     cost_tracker.record_usage(request.thread_id, prompt_toks, estimate_token_count(final_msg))
     audit_logger.log("chat_request", "POST /api/chat", request.thread_id, status="success", duration_ms=dur_ms, details={"tools_used": tools})
+
+    if hasattr(storage, "sync_database"):
+        background_tasks.add_task(storage.sync_database, "chatbot.db")
 
     return ChatResponse(
         thread_id=request.thread_id,
@@ -276,6 +316,11 @@ def chat_stream(request: ChatRequest, req: Request) -> StreamingResponse:
                     yield _event({"type": "token", "content": tok})
             cost_tracker.record_usage(request.thread_id, prompt_toks, estimate_token_count("".join(collected_tokens)))
             audit_logger.log("chat_stream", "POST /api/chat/stream", request.thread_id, status="success", details={"tools": tools_used})
+            if hasattr(storage, "sync_database"):
+                try:
+                    storage.sync_database("chatbot.db")
+                except Exception:
+                    pass
             yield _event({"type": "done", "tools_used": tools_used})
         except (RuntimeError, ValueError) as exc:
             yield _event({"type": "error", "message": str(exc)})
@@ -322,7 +367,13 @@ async def upload_document(
     if len(data) > 200 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File exceeds the 200 MB limit.")
     try:
-        return ingest_pdf(data, thread_id=thread_id, filename=filename)
+        res = ingest_pdf(data, thread_id=thread_id, filename=filename)
+        if hasattr(storage, "sync_database"):
+            try:
+                storage.sync_database("chatbot.db")
+            except Exception:
+                pass
+        return res
     except Exception as exc:
         raise HTTPException(
             status_code=422, detail=f"Failed to process document: {exc}"
