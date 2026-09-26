@@ -109,8 +109,26 @@ During local testing of the web interface, the frontend displayed:
    .\.venv-win\Scripts\python.exe -m unittest discover tests
    ```
 
-### Deploying a New Render Service
-1. In Render Dashboard, click **New +** → **Web Service** → select repository.
-2. Set Runtime to **Docker**, Dockerfile to `Dockerfile.api`.
-3. Configure environment variable: `NVIDIA_API_KEY`.
-4. Deploy and point `frontend/.env.local` to the new service URL.
+### Production Deployment (100% Free Stack)
+
+Detailed step-by-step instructions are available in [`deployment_guide.md`](file:///d:/Main/Projects/ChatBot/deployment_guide.md).
+
+#### 1. Backend (FastAPI + LangGraph) on Render
+1. Go to [render.com](https://dashboard.render.com/) → **New +** → **Blueprint** (or **Web Service**).
+2. Connect your GitHub repo: `Geetansh124/Agent-Pilot`.
+3. Render reads `render.yaml` automatically, or configure manually:
+   - **Runtime**: Docker
+   - **Dockerfile Path**: `./Dockerfile.api`
+4. Set required Environment Variables:
+   - `NVIDIA_API_KEY`: Your NVIDIA API key
+   - `HF_API_TOKEN`: Your HuggingFace token
+   - `FRONTEND_ORIGIN`: Your Vercel frontend URL
+5. Click **Deploy**. Note your service URL (e.g., `https://agent-pilot-api.onrender.com`).
+
+#### 2. Frontend (Next.js 14) on Vercel
+1. Go to [vercel.com](https://vercel.com/dashboard) → **Add New** → **Project**.
+2. Import your GitHub repo: `Geetansh124/Agent-Pilot`.
+3. Set **Root Directory** to `frontend`.
+4. Set Environment Variable:
+   - `NEXT_PUBLIC_API_URL`: Your Render backend URL
+5. Click **Deploy**. Note your frontend URL and add it to `FRONTEND_ORIGIN` in Render.

@@ -22,7 +22,7 @@ git push origin main
 ## Step 2 — Deploy Backend on Render (Free)
 
 1. Go to [render.com](https://dashboard.render.com/) → **New** → **Blueprint**.
-2. Connect your GitHub repo: `Geetansh124/DocuPilot-AI`.
+2. Connect your GitHub repo: `Geetansh124/Agent-Pilot`.
 3. Render reads `render.yaml` automatically and creates the **docupilot-api** service.
 4. **Set secret environment variables** in the Render dashboard → Service → **Environment** tab:
 
@@ -43,7 +43,7 @@ git push origin main
 ## Step 3 — Deploy Frontend on Vercel (Free)
 
 1. Go to [vercel.com](https://vercel.com/dashboard) → **Add New** → **Project**.
-2. Import your GitHub repo: `Geetansh124/DocuPilot-AI`.
+2. Import your GitHub repo: `Geetansh124/Agent-Pilot`.
 3. Configure:
    - **Framework Preset**: Next.js
    - **Root Directory**: `frontend`
