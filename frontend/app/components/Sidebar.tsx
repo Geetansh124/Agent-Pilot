@@ -72,9 +72,11 @@ export default function Sidebar({
       <div className="shrink-0 p-4 border-b border-zinc-800/80">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800/80 border border-zinc-700/60 p-1">
-              <img src="/icon.svg" alt="Agent-Pilot" className="h-5 w-5" />
-            </div>
+            <img
+              src="/icon.jpg"
+              alt="Agent-Pilot Logo"
+              className="h-8 w-8 rounded-lg border border-zinc-800 object-cover shadow-sm"
+            />
             <div>
               <div className="text-sm font-semibold tracking-tight text-zinc-100">
                 Agent-Pilot

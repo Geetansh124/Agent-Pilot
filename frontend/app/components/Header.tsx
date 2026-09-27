@@ -32,9 +32,11 @@ export default function Header({
         </button>
 
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 p-0.5">
-            <img src="/icon.svg" alt="Agent-Pilot" className="h-4 w-4" />
-          </div>
+          <img
+            src="/icon.jpg"
+            alt="Agent-Pilot Logo"
+            className="h-6 w-6 rounded-md border border-zinc-800 object-cover shadow-sm"
+          />
           <span className="text-xs font-semibold text-zinc-200 tracking-tight">
             Agent-Pilot
           </span>

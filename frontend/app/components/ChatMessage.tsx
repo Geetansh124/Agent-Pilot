@@ -35,9 +35,11 @@ export default function ChatMessage({
     <div className={`group flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser && (
         <div className="shrink-0 mt-0.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 p-1">
-            <img src="/icon.svg" alt="Agent-Pilot" className="h-4 w-4" />
-          </div>
+          <img
+            src="/icon.jpg"
+            alt="Agent-Pilot"
+            className="h-7 w-7 rounded-lg border border-zinc-800 object-cover shadow-sm"
+          />
         </div>
       )}
 

@@ -49,13 +49,16 @@ export default function HeroSection({ onSelectPrompt, onOpenSkills }: HeroSectio
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center pt-8 pb-10">
-      {/* Brand Header */}
       <div className="flex flex-col items-center text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/90 p-2.5 shadow-sm">
-          <img src="/icon.svg" alt="Agent-Pilot" className="h-9 w-9" />
+        <div className="relative mb-3">
+          <img
+            src="/icon.jpg"
+            alt="Agent-Pilot Logo"
+            className="h-20 w-20 rounded-2xl border border-zinc-800/80 shadow-2xl shadow-black/80 object-cover hover:scale-105 transition-transform duration-200"
+          />
         </div>
 
-        <h1 className="mt-4 text-2xl sm:text-3xl font-semibold tracking-tight text-zinc-100">
+        <h1 className="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight text-zinc-100">
           Agent-Pilot
         </h1>
         <p className="mt-1.5 max-w-md text-xs sm:text-sm text-zinc-400 leading-relaxed">
