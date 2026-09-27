@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGradient" cx="50%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#1e232e" />
+      <stop offset="60%" stop-color="#101319" />
+      <stop offset="100%" stop-color="#0a0c10" />
+    </radialGradient>
+
+    <!-- Bevel Lighting Gradients -->
+    <linearGradient id="leftFacetGrad" x1="20%" y1="100%" x2="80%" y2="0%">
+      <stop offset="0%" stop-color="#0072ff" />
+      <stop offset="50%" stop-color="#00c6ff" />
+      <stop offset="100%" stop-color="#e0f7ff" />
+    </linearGradient>
+
+    <linearGradient id="rightFacetGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00a8ff" />
+      <stop offset="45%" stop-color="#0052cc" />
+      <stop offset="100%" stop-color="#002b80" />
+    </linearGradient>
+
+    <linearGradient id="innerLeftFacet" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#005bbb" />
+      <stop offset="70%" stop-color="#00d2ff" />
+      <stop offset="100%" stop-color="#ffffff" />
+    </linearGradient>
+
+    <linearGradient id="innerRightFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#003580" />
+      <stop offset="100%" stop-color="#001a40" />
+    </linearGradient>
+
+    <linearGradient id="crosswingGrad" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="50%" stop-color="#00a8ff" />
+      <stop offset="100%" stop-color="#004e92" />
+    </linearGradient>
+
+    <!-- Drop Shadows & Glow -->
+    <filter id="badgeShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000000" flood-opacity="0.65" />
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+
+    <filter id="emblemGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#00c6ff" flood-opacity="0.4" />
+      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.18)" />
+      <stop offset="50%" stop-color="rgba(255,255,255,0.04)" />
+      <stop offset="100%" stop-color="rgba(0,0,0,0.6)" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle Canvas with Shadow -->
+  <rect x="56" y="56" width="400" height="400" rx="92" ry="92"
+        fill="url(#bgGradient)"
+        filter="url(#badgeShadow)" />
+
+  <!-- Crisp Inner Bevel Border -->
+  <rect x="56.5" y="56.5" width="399" height="399" rx="91.5" ry="91.5"
+        fill="none"
+        stroke="url(#borderGrad)"
+        stroke-width="1.5" />
+
+  <!-- Subtle Ambient Glow Behind Logo -->
+  <circle cx="256" cy="245" r="110" fill="#00d2ff" opacity="0.08" filter="blur(30px)" />
+
+  <!-- Main Delta-Wing Monogram Group -->
+  <g filter="url(#emblemGlow)">
+    <!-- Left Wing Face (Main Light Reflector) -->
+    <path d="M 256 128 L 144 336 L 208 300 L 256 200 Z"
+          fill="url(#leftFacetGrad)" />
+
+    <!-- Right Wing Face (Shaded Bevel) -->
+    <path d="M 256 128 L 256 200 L 304 300 L 368 336 Z"
+          fill="url(#rightFacetGrad)" />
+
+    <!-- Left Inner Chamfer (Light Inset) -->
+    <path d="M 256 200 L 208 300 L 256 270 Z"
+          fill="url(#innerLeftFacet)" />
+
+    <!-- Right Inner Chamfer (Deep Shadow Inset) -->
+    <path d="M 256 200 L 256 270 L 304 300 Z"
+          fill="url(#innerRightFacet)" />
+
+    <!-- Center Dynamic Pilot Chevron Crosswing (Stealth Arrow Accent) -->
+    <path d="M 194 322 L 256 288 L 318 322 L 256 304 Z"
+          fill="url(#crosswingGrad)" />
+
+    <!-- Left Wing Edge Glint -->
+    <path d="M 256 128 L 144 336 L 148 338 L 256 132 Z"
+          fill="#ffffff" opacity="0.45" />
+
+    <!-- Ridge Highlight (Spine of Delta Wing) -->
+    <line x1="256" y1="128" x2="256" y2="200"
+          stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.85" />
+
+    <!-- Apex Specular Sparkle -->
+    <g transform="translate(256, 128)">
+      <circle cx="0" cy="0" r="4" fill="#ffffff" />
+      <path d="M -9 0 Q 0 0 0 -9 Q 0 0 9 0 Q 0 0 0 9 Q 0 0 -9 0 Z"
+            fill="#ffffff" opacity="0.9" />
+    </g>
+  </g>
+</svg>

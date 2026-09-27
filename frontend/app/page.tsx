@@ -286,13 +286,20 @@ export default function Home() {
           {/* Top fixed controls in sidebar */}
           <div className="shrink-0 p-5 pb-2">
             <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xl font-bold tracking-tight">
-                  Agent-<span className="text-violet-400">Pilot</span>
+              <div className="flex items-center gap-3">
+                <img
+                  src="/icon.svg"
+                  alt="Agent-Pilot"
+                  className="h-10 w-10 shrink-0 rounded-xl border border-white/10 shadow-lg shadow-cyan-500/10"
+                />
+                <div>
+                  <div className="text-xl font-bold tracking-tight">
+                    Agent-<span className="text-cyan-400">Pilot</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Your intelligent document workspace
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  Your intelligent document workspace
-                </p>
               </div>
               <button className="md:hidden" onClick={() => setSidebarOpen(false)}>
                 <X size={18} />
@@ -407,20 +414,35 @@ export default function Home() {
       {/* Main chat section with fixed header, independently scrollable messages, and fixed input bar */}
       <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <header className="shrink-0 flex items-center justify-between border-b border-white/10 bg-[#090a10] px-6 py-4">
-          <button className="md:hidden" onClick={() => setSidebarOpen(true)}>
-            <Menu size={20} />
-          </button>
-          <div className="hidden md:block" />
+          <div className="flex items-center gap-3">
+            <button className="md:hidden" onClick={() => setSidebarOpen(true)}>
+              <Menu size={20} />
+            </button>
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/icon.svg"
+                alt="Agent-Pilot"
+                className="h-7 w-7 rounded-lg border border-white/10"
+              />
+              <span className="font-bold tracking-tight text-sm text-slate-200">
+                Agent-<span className="text-cyan-400">Pilot</span>
+              </span>
+            </div>
+          </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" /> Ready
+            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" /> Ready
           </div>
         </header>
 
         {/* Scrollable messages container */}
         <div className="flex-1 overflow-y-auto px-5 py-8">
           <div className="mx-auto flex w-full max-w-4xl flex-col">
-            <div className="mb-8 flex items-center gap-3">
-              <div className="rounded-xl bg-violet-400/15 p-3 text-violet-300"><Sparkles size={22} /></div>
+            <div className="mb-8 flex items-center gap-4">
+              <img
+                src="/icon.svg"
+                alt="Agent-Pilot Emblem"
+                className="h-14 w-14 shrink-0 rounded-2xl border border-white/15 p-1 shadow-xl shadow-cyan-500/10"
+              />
               <div>
                 <h1 className="text-3xl font-bold tracking-tight">What would you like to explore?</h1>
                 <p className="mt-1 text-sm text-slate-400">Ask questions, analyze documents, or use your AI tools.</p>
@@ -453,7 +475,15 @@ export default function Home() {
                 return (
                   <div key={index} className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
                     <div className={`flex max-w-[80%] gap-3 rounded-2xl px-4 py-3 ${isUser ? "bg-violet-500 text-white" : "border border-white/10 bg-white/[.04] text-slate-200"}`}>
-                      {isUser ? <User size={17} className="mt-1 shrink-0" /> : <Bot size={17} className="mt-1 shrink-0 text-violet-300" />}
+                      {isUser ? (
+                        <User size={17} className="mt-1 shrink-0" />
+                      ) : (
+                        <img
+                          src="/icon.svg"
+                          alt="Pilot"
+                          className="mt-1 h-5 w-5 shrink-0 rounded-md border border-cyan-400/30"
+                        />
+                      )}
                       <div className="min-w-0 flex-1 text-sm leading-6">
                         {isUser ? (
                           <div className="whitespace-pre-wrap">{message.content}</div>
