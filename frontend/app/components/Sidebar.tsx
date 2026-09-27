@@ -9,7 +9,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Layers,
   Sparkles,
 } from "lucide-react";
 import { Thread } from "./types";
@@ -26,7 +25,6 @@ interface SidebarProps {
   onUpload: (file: File) => void;
   sidebarOpen: boolean;
   onCloseSidebar: () => void;
-  onOpenSkills: () => void;
 }
 
 export default function Sidebar({
@@ -41,7 +39,6 @@ export default function Sidebar({
   onUpload,
   sidebarOpen,
   onCloseSidebar,
-  onOpenSkills,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -95,21 +92,13 @@ export default function Sidebar({
         </div>
 
         {/* Action Controls */}
-        <div className="mt-3.5 grid grid-cols-2 gap-2">
+        <div className="mt-3.5">
           <button
             onClick={onNewChat}
-            className="flex items-center justify-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-white transition shadow-sm"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-white transition shadow-sm"
           >
             <Plus size={14} />
             <span>New Chat</span>
-          </button>
-
-          <button
-            onClick={onOpenSkills}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition"
-          >
-            <Layers size={13} />
-            <span>Skills (⌘K)</span>
           </button>
         </div>
 
@@ -223,17 +212,6 @@ export default function Sidebar({
               );
             })
           )}
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="shrink-0 p-3 border-t border-zinc-800/80 bg-zinc-950/40">
-        <div className="flex items-center justify-between text-[11px] text-zinc-500">
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            <span>Ready</span>
-          </div>
-          <span className="font-mono text-[10px]">Ruflo Swarm</span>
         </div>
       </div>
     </aside>

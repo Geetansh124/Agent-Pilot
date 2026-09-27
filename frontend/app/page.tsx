@@ -1,13 +1,12 @@
 "use client";
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { ArrowUp, Square, Layers, Loader2, Upload } from "lucide-react";
+import { ArrowUp, Square, Loader2, Upload } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import HeroSection from "./components/HeroSection";
 import ChatMessage from "./components/ChatMessage";
-import SkillsModal from "./components/SkillsModal";
-import { Message, Thread, AgentSkill } from "./components/types";
+import { Message, Thread } from "./components/types";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
@@ -22,23 +21,10 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [skillsModalOpen, setSkillsModalOpen] = useState(false);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-
-  // Keyboard shortcut: Cmd+K / Ctrl+K opens Skills Modal
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setSkillsModalOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
 
   useEffect(() => {
     void loadThreads();
@@ -285,11 +271,6 @@ export default function Home() {
     }
   }
 
-  const handleSelectSkill = (skill: AgentSkill) => {
-    setInput(skill.prompt);
-    setSkillsModalOpen(false);
-  };
-
   return (
     <main className="flex h-screen w-full overflow-hidden bg-[#09090b] text-zinc-100">
       {/* Sidebar */}
@@ -305,14 +286,12 @@ export default function Home() {
         onUpload={upload}
         sidebarOpen={sidebarOpen}
         onCloseSidebar={() => setSidebarOpen(false)}
-        onOpenSkills={() => setSkillsModalOpen(true)}
       />
 
       {/* Main Chat Workspace */}
       <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-          onOpenSkills={() => setSkillsModalOpen(true)}
           activeTool={activeTool}
         />
 
@@ -322,7 +301,6 @@ export default function Home() {
             {messages.length === 0 ? (
               <HeroSection
                 onSelectPrompt={(prompt) => setInput(prompt)}
-                onOpenSkills={() => setSkillsModalOpen(true)}
               />
             ) : (
               <div className="space-y-4">
@@ -386,16 +364,7 @@ export default function Home() {
               }}
             />
 
-            <button
-              type="button"
-              onClick={() => setSkillsModalOpen(true)}
-              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-              title="Skills & Tools (⌘K)"
-            >
-              <Layers size={14} />
-            </button>
-
-            <input
+              <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={busy}
@@ -424,19 +393,11 @@ export default function Home() {
             )}
           </form>
 
-          <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between text-[11px] text-zinc-500 px-1">
+          <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-center text-[11px] text-zinc-500 px-1">
             <span>Press <kbd className="text-zinc-400 font-mono">↵</kbd> to send</span>
-            <span>Agent-Pilot</span>
           </div>
         </div>
       </section>
-
-      {/* Skills Library Modal */}
-      <SkillsModal
-        isOpen={skillsModalOpen}
-        onClose={() => setSkillsModalOpen(false)}
-        onSelectSkill={handleSelectSkill}
-      />
     </main>
   );
 }

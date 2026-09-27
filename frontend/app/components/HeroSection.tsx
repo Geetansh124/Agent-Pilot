@@ -7,15 +7,13 @@ import {
   BarChart3,
   FileText,
   ArrowRight,
-  Sparkles,
 } from "lucide-react";
 
 interface HeroSectionProps {
   onSelectPrompt: (prompt: string) => void;
-  onOpenSkills: () => void;
 }
 
-export default function HeroSection({ onSelectPrompt, onOpenSkills }: HeroSectionProps) {
+export default function HeroSection({ onSelectPrompt }: HeroSectionProps) {
   const quickCards = [
     {
       title: "Web Research & Scraping",
@@ -64,15 +62,6 @@ export default function HeroSection({ onSelectPrompt, onOpenSkills }: HeroSectio
         <p className="mt-1.5 max-w-md text-xs sm:text-sm text-zinc-400 leading-relaxed">
           Autonomous workspace for deep web research, code execution, and document intelligence.
         </p>
-
-        <button
-          onClick={onOpenSkills}
-          className="mt-3.5 inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition"
-        >
-          <Sparkles size={12} className="text-zinc-400" />
-          <span>Explore 8 Agent Skills & Tools</span>
-          <ArrowRight size={11} className="text-zinc-500" />
-        </button>
       </div>
 
       {/* Action Cards (Neutral Zinc) */}
