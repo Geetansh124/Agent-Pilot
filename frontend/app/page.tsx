@@ -1,13 +1,13 @@
 "use client";
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { ArrowUp, Square, Layers, Loader2 } from "lucide-react";
+import { ArrowUp, Square, Layers, Loader2, Upload } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import HeroSection from "./components/HeroSection";
 import ChatMessage from "./components/ChatMessage";
 import SkillsModal from "./components/SkillsModal";
-import { Message, Thread, AgentRole, AgentSkill } from "./components/types";
+import { Message, Thread, AgentSkill } from "./components/types";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
@@ -23,7 +23,7 @@ export default function Home() {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [skillsModalOpen, setSkillsModalOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<AgentRole>("auto");
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -281,7 +281,6 @@ export default function Home() {
   }
 
   const handleSelectSkill = (skill: AgentSkill) => {
-    setSelectedRole(skill.agentRole);
     setInput(skill.prompt);
     setSkillsModalOpen(false);
   };
@@ -308,8 +307,6 @@ export default function Home() {
       <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-          selectedRole={selectedRole}
-          onSelectRole={setSelectedRole}
           onOpenSkills={() => setSkillsModalOpen(true)}
           activeTool={activeTool}
         />
@@ -365,18 +362,39 @@ export default function Home() {
           >
             <button
               type="button"
+              onClick={() => chatFileInputRef.current?.click()}
+              disabled={uploading}
+              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
+              title="Attach document (.pdf, .docx, .csv, .txt)"
+            >
+              <Upload size={14} className={uploading ? "animate-pulse text-zinc-300" : ""} />
+            </button>
+            <input
+              ref={chatFileInputRef}
+              type="file"
+              accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void upload(file);
+                e.target.value = "";
+              }}
+            />
+
+            <button
+              type="button"
               onClick={() => setSkillsModalOpen(true)}
               className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
               title="Skills & Tools (⌘K)"
             >
-              <Layers size={15} />
+              <Layers size={14} />
             </button>
 
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={busy}
-              placeholder="Ask anything, execute code, scrape URLs, or analyze documents..."
+              placeholder={uploading ? "Indexing attached document..." : "Ask anything, run code, scrape URLs, or query documents..."}
               className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none"
             />
 
