@@ -4,7 +4,6 @@ import React, { useState, useMemo } from "react";
 import {
   Search,
   X,
-  Sparkles,
   Globe,
   Code2,
   BarChart3,
@@ -14,8 +13,9 @@ import {
   Cpu,
   TrendingUp,
   ArrowRight,
+  Layers,
 } from "lucide-react";
-import { AgentSkill, AgentRole } from "./types";
+import { AgentSkill } from "./types";
 import { AGENT_SKILLS } from "./skillsData";
 
 interface SkillsModalProps {
@@ -25,14 +25,14 @@ interface SkillsModalProps {
 }
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  Globe: <Globe size={18} className="text-cyan-400" />,
-  Code2: <Code2 size={18} className="text-emerald-400" />,
-  BarChart3: <BarChart3 size={18} className="text-amber-400" />,
-  FileSearch: <FileSearch size={18} className="text-blue-400" />,
-  Clock: <Clock size={18} className="text-purple-400" />,
-  Network: <Network size={18} className="text-violet-400" />,
-  Cpu: <Cpu size={18} className="text-pink-400" />,
-  TrendingUp: <TrendingUp size={18} className="text-teal-400" />,
+  Globe: <Globe size={16} className="text-zinc-400" />,
+  Code2: <Code2 size={16} className="text-zinc-400" />,
+  BarChart3: <BarChart3 size={16} className="text-zinc-400" />,
+  FileSearch: <FileSearch size={16} className="text-zinc-400" />,
+  Clock: <Clock size={16} className="text-zinc-400" />,
+  Network: <Network size={16} className="text-zinc-400" />,
+  Cpu: <Cpu size={16} className="text-zinc-400" />,
+  TrendingUp: <TrendingUp size={16} className="text-zinc-400" />,
 };
 
 export default function SkillsModal({ isOpen, onClose, onSelectSkill }: SkillsModalProps) {
@@ -40,10 +40,10 @@ export default function SkillsModal({ isOpen, onClose, onSelectSkill }: SkillsMo
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const categories = [
-    { id: "all", label: "All Skills" },
-    { id: "research", label: "Web & Research" },
-    { id: "code", label: "Code & Sandbox" },
-    { id: "data", label: "Data Analytics" },
+    { id: "all", label: "All" },
+    { id: "research", label: "Research" },
+    { id: "code", label: "Code" },
+    { id: "data", label: "Data" },
     { id: "analysis", label: "Document Intel" },
     { id: "automation", label: "Automation" },
   ];
@@ -64,51 +64,48 @@ export default function SkillsModal({ isOpen, onClose, onSelectSkill }: SkillsMo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div
-        className="relative flex flex-col w-full max-w-2xl max-h-[85vh] rounded-3xl border border-white/10 bg-[#0c1017]/95 shadow-2xl shadow-cyan-500/10 overflow-hidden"
+        className="relative flex flex-col w-full max-w-xl max-h-[80vh] rounded-xl border border-zinc-800 bg-[#121215] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header with Search Input */}
-        <div className="shrink-0 p-5 border-b border-white/10 bg-white/[0.02]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-white">
-              <Sparkles size={16} className="text-cyan-400" />
-              <span>Agent Skills & Tools Library</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                {AGENT_SKILLS.length} Capabilities
-              </span>
+        {/* Search Header (Raycast Style) */}
+        <div className="shrink-0 p-3.5 border-b border-zinc-800">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <div className="flex items-center gap-2 text-xs font-medium text-zinc-300">
+              <Layers size={14} className="text-zinc-400" />
+              <span>Agent Skills Library</span>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+              className="p-1 rounded text-zinc-400 hover:text-zinc-200 transition"
             >
-              <X size={18} />
+              <X size={15} />
             </button>
           </div>
 
           <div className="relative">
-            <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search skills, tools, web scraping, python..."
+              placeholder="Search skills, tools, web scraper, python..."
               autoFocus
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-sm text-white placeholder:text-slate-500 outline-none focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/30 transition"
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-700"
             />
           </div>
 
           {/* Category Tabs */}
-          <div className="flex items-center gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-none">
+          <div className="flex items-center gap-1 mt-2.5 overflow-x-auto pb-0.5">
             {categories.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition ${
+                className={`text-xs px-2.5 py-1 rounded-md font-medium whitespace-nowrap transition ${
                   selectedCategory === cat.id
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                    ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
                 }`}
               >
                 {cat.label}
@@ -117,41 +114,41 @@ export default function SkillsModal({ isOpen, onClose, onSelectSkill }: SkillsMo
           </div>
         </div>
 
-        {/* Skills Grid */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+        {/* Skills List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
           {filteredSkills.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-sm">
-              No skills found matching &ldquo;{query}&rdquo;.
+            <div className="py-8 text-center text-zinc-500 text-xs">
+              No skills found for &ldquo;{query}&rdquo;.
             </div>
           ) : (
             filteredSkills.map((skill) => (
               <div
                 key={skill.id}
                 onClick={() => onSelectSkill(skill)}
-                className="group flex items-start gap-4 p-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] hover:bg-cyan-500/[0.06] hover:border-cyan-500/30 cursor-pointer transition-all"
+                className="group flex items-start gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-900/30 hover:bg-zinc-800/60 hover:border-zinc-700/80 cursor-pointer transition"
               >
-                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 group-hover:scale-105 group-hover:border-cyan-400/40 transition">
-                  {ICON_MAP[skill.icon] || <Sparkles size={18} className="text-cyan-400" />}
+                <div className="p-2 rounded-md bg-zinc-800/80 text-zinc-300">
+                  {ICON_MAP[skill.icon] || <Layers size={16} />}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-sm font-semibold text-white group-hover:text-cyan-300 transition">
+                    <h4 className="text-xs font-semibold text-zinc-200 group-hover:text-white">
                       {skill.name}
                     </h4>
                     {skill.badge && (
-                      <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/5 text-slate-300 border border-white/10">
+                      <span className="text-[10px] font-mono text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-800/50">
                         {skill.badge}
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-xs text-slate-400 leading-relaxed line-clamp-2">
+                  <p className="mt-0.5 text-xs text-zinc-400 leading-relaxed line-clamp-2">
                     {skill.description}
                   </p>
-                  <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-cyan-400 font-medium opacity-0 group-hover:opacity-100 transition">
-                    <span>Use this skill</span>
-                    <ArrowRight size={12} />
-                  </div>
+                </div>
+
+                <div className="mt-1 text-zinc-500 opacity-0 group-hover:opacity-100 transition">
+                  <ArrowRight size={13} />
                 </div>
               </div>
             ))
@@ -159,10 +156,10 @@ export default function SkillsModal({ isOpen, onClose, onSelectSkill }: SkillsMo
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 p-3.5 border-t border-white/10 bg-white/[0.01] flex items-center justify-between text-xs text-slate-500 px-5">
-          <span>Click any skill to auto-fill the prompt and execute</span>
-          <kbd className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] text-slate-400">
-            ESC to close
+        <div className="shrink-0 p-2.5 border-t border-zinc-800 bg-zinc-950/40 flex items-center justify-between text-[11px] text-zinc-500 px-4">
+          <span>Click to populate prompt</span>
+          <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] text-zinc-400 font-mono">
+            ESC
           </kbd>
         </div>
       </div>

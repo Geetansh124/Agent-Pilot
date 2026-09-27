@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { Send, Square, Sparkles, AlertCircle, Bot } from "lucide-react";
+import { ArrowUp, Square, Layers, Loader2 } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import HeroSection from "./components/HeroSection";
@@ -59,7 +59,7 @@ export default function Home() {
       setThreads(data);
       if (!threadId) newChat(data);
     } catch {
-      /* server may be waking up */
+      /* server waking up */
     }
   }
 
@@ -287,8 +287,8 @@ export default function Home() {
   };
 
   return (
-    <main className="flex h-screen w-full overflow-hidden bg-[#07090e] text-slate-100">
-      {/* Sleek Sidebar */}
+    <main className="flex h-screen w-full overflow-hidden bg-[#09090b] text-zinc-100">
+      {/* Sidebar */}
       <Sidebar
         threads={threads}
         activeThreadId={threadId}
@@ -314,16 +314,16 @@ export default function Home() {
           activeTool={activeTool}
         />
 
-        {/* Scrollable messages container */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 scrollbar-none">
-          <div className="mx-auto flex w-full max-w-4xl flex-col">
+        {/* Messages container */}
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-col">
             {messages.length === 0 ? (
               <HeroSection
                 onSelectPrompt={(prompt) => setInput(prompt)}
                 onOpenSkills={() => setSkillsModalOpen(true)}
               />
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {messages.map((message, index) => (
                   <ChatMessage
                     key={index}
@@ -333,25 +333,22 @@ export default function Home() {
                   />
                 ))}
 
-                {/* Active Tool Indicator Pill */}
+                {/* Active Tool Indicator */}
                 {activeTool && (
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-cyan-400/30 bg-cyan-500/[0.06] px-4 py-2.5 text-xs text-cyan-300 w-fit backdrop-blur-md">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
-                    </span>
-                    <span>Executing agent tool:</span>
-                    <code className="font-mono font-bold text-white bg-black/40 px-1.5 py-0.5 rounded border border-white/10">
+                  <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-300 w-fit">
+                    <Loader2 size={12} className="animate-spin text-zinc-400" />
+                    <span>Executing:</span>
+                    <code className="font-mono text-zinc-200 bg-zinc-800 px-1 py-0.5 rounded text-[11px]">
                       {activeTool}
                     </code>
                   </div>
                 )}
 
-                {/* Thinking Pulse */}
+                {/* Thinking Indicator */}
                 {busy && !streaming && !activeTool && (
-                  <div className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-slate-400 w-fit">
-                    <Bot size={16} className="text-cyan-400 animate-spin" />
-                    <span>Agent-Pilot synthesizing response…</span>
+                  <div className="flex items-center gap-2 rounded-md border border-zinc-800/80 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400 w-fit">
+                    <Loader2 size={12} className="animate-spin text-zinc-500" />
+                    <span>Thinking…</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -360,53 +357,53 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Supercharged Bottom Input Bar */}
-        <div className="shrink-0 border-t border-white/[0.08] bg-[#07090e]/95 px-4 sm:px-6 py-4 backdrop-blur-xl">
+        {/* Input Bar (Linear / Claude Style) */}
+        <div className="shrink-0 border-t border-zinc-800/80 bg-[#09090b] px-4 sm:px-6 py-3">
           <form
             onSubmit={send}
-            className="mx-auto flex w-full max-w-4xl items-center gap-3 rounded-2xl border border-white/10 bg-[#0e121b] p-2 shadow-2xl shadow-black/40 focus-within:border-cyan-500/50 focus-within:ring-1 focus-within:ring-cyan-500/20 transition-all"
+            className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-zinc-800 bg-[#121215] p-2 focus-within:border-zinc-700 transition"
           >
             <button
               type="button"
               onClick={() => setSkillsModalOpen(true)}
-              className="p-2.5 rounded-xl text-slate-400 hover:text-cyan-300 hover:bg-white/5 transition"
-              title="Explore Skills (⌘K)"
+              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
+              title="Skills & Tools (⌘K)"
             >
-              <Sparkles size={17} className="text-cyan-400" />
+              <Layers size={15} />
             </button>
 
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={busy}
-              placeholder="Ask anything, execute Python, scrape URLs, or analyze documents..."
-              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-white placeholder:text-slate-500 outline-none"
+              placeholder="Ask anything, execute code, scrape URLs, or analyze documents..."
+              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none"
             />
 
             {streaming ? (
               <button
                 type="button"
                 onClick={stopStreaming}
-                className="flex items-center gap-1.5 rounded-xl bg-red-500/80 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-red-500"
+                className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-750 transition"
                 title="Stop generation"
               >
-                <Square size={14} />
+                <Square size={12} />
                 <span>Stop</span>
               </button>
             ) : (
               <button
                 disabled={busy || !input.trim()}
                 type="submit"
-                className="flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 p-2.5 text-white shadow-lg shadow-cyan-500/20 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex items-center justify-center rounded-lg bg-zinc-100 p-2 text-zinc-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-30"
               >
-                <Send size={16} />
+                <ArrowUp size={15} />
               </button>
             )}
           </form>
 
-          <div className="mx-auto mt-2 flex w-full max-w-4xl items-center justify-between text-[11px] text-slate-500 px-1">
-            <span className="hidden sm:inline">Press <kbd className="font-mono text-slate-400">Enter</kbd> to execute</span>
-            <span>Agent-Pilot Multi-Agent Architecture</span>
+          <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between text-[11px] text-zinc-500 px-1">
+            <span>Press <kbd className="text-zinc-400 font-mono">↵</kbd> to send</span>
+            <span>Agent-Pilot</span>
           </div>
         </div>
       </section>
