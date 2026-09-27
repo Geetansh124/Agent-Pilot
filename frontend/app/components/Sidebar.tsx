@@ -45,7 +45,8 @@ export default function Sidebar({
   const [editTitle, setEditTitle] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredThreads = threads.filter((t) =>
+  const threadList = Array.isArray(threads) ? threads : [];
+  const filteredThreads = threadList.filter((t) =>
     (t.title || "New Chat").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -94,8 +95,9 @@ export default function Sidebar({
         {/* Action Controls */}
         <div className="mt-3.5">
           <button
-            onClick={onNewChat}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-white transition shadow-sm"
+            type="button"
+            onClick={() => onNewChat()}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-white active:bg-zinc-200 transition shadow-sm cursor-pointer select-none"
           >
             <Plus size={14} />
             <span>New Chat</span>

@@ -49,7 +49,7 @@ export default function Home() {
     }
   }
 
-  function newChat(existing = threads) {
+  function newChat(existing?: Thread[] | unknown) {
     abortRef.current?.abort();
     setBusy(false);
     setStreaming(false);
@@ -57,8 +57,11 @@ export default function Home() {
     const id = crypto.randomUUID();
     setThreadId(id);
     setMessages([]);
+    setInput("");
     setDocument(null);
-    setThreads(existing);
+    if (Array.isArray(existing)) {
+      setThreads(existing);
+    }
   }
 
   function selectThread(thread: Thread) {
@@ -278,7 +281,7 @@ export default function Home() {
         threads={threads}
         activeThreadId={threadId}
         onSelectThread={selectThread}
-        onNewChat={newChat}
+        onNewChat={() => newChat()}
         onDeleteThread={deleteThread}
         onRenameThread={renameThread}
         document={document}
@@ -292,6 +295,7 @@ export default function Home() {
       <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          onNewChat={() => newChat()}
           activeTool={activeTool}
         />
 
