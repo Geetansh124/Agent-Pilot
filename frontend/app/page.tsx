@@ -204,9 +204,10 @@ export default function Home() {
           : error instanceof Error
           ? error.message
           : "Something went wrong.";
-      const errorContent = msg.includes("Failed to fetch")
-        ? "Could not reach the server — it may be waking up (free tier). Please wait 30s and try again."
-        : msg;
+      const errorContent =
+        msg.includes("Failed to fetch") || msg.includes("NetworkError")
+          ? "Server is starting..."
+          : msg;
 
       setMessages((cur) => {
         const next = [...cur];
@@ -271,9 +272,13 @@ export default function Home() {
       ]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Upload failed.";
+      const errorContent =
+        msg.includes("Failed to fetch") || msg.includes("NetworkError")
+          ? "Server is starting..."
+          : `Upload error: ${msg}`;
       setMessages((current) => [
         ...current,
-        { role: "assistant", content: `Upload error: ${msg}` },
+        { role: "assistant", content: errorContent },
       ]);
     } finally {
       setUploading(false);
