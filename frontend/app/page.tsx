@@ -10,6 +10,21 @@ import { Message, Thread } from "./components/types";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
+function safeUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      /* fallback */
+    }
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export default function Home() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [threadId, setThreadId] = useState("");
@@ -42,19 +57,25 @@ export default function Home() {
       const response = await fetch(`${API}/api/threads`);
       if (!response.ok) return;
       const data = await response.json();
-      setThreads(data);
-      if (!threadId) newChat(data);
+      if (Array.isArray(data)) {
+        setThreads(data);
+        if (!threadId) newChat(data);
+      }
     } catch {
       /* server waking up */
     }
   }
 
   function newChat(existing?: Thread[] | unknown) {
-    abortRef.current?.abort();
+    try {
+      abortRef.current?.abort();
+    } catch {
+      /* ignore */
+    }
     setBusy(false);
     setStreaming(false);
     setActiveTool(null);
-    const id = crypto.randomUUID();
+    const id = safeUUID();
     setThreadId(id);
     setMessages([]);
     setInput("");
@@ -65,12 +86,16 @@ export default function Home() {
   }
 
   function selectThread(thread: Thread) {
-    abortRef.current?.abort();
+    try {
+      abortRef.current?.abort();
+    } catch {
+      /* ignore */
+    }
     setBusy(false);
     setStreaming(false);
     setActiveTool(null);
-    setThreadId(thread.id);
-    setMessages(thread.messages);
+    setThreadId(thread.id || safeUUID());
+    setMessages(Array.isArray(thread.messages) ? thread.messages : []);
   }
 
   async function deleteThread(id: string) {
@@ -79,8 +104,8 @@ export default function Home() {
     } catch {
       /* best-effort */
     }
-    setThreads((current) => current.filter((t) => t.id !== id));
-    if (threadId === id) newChat(threads.filter((t) => t.id !== id));
+    setThreads((current) => (Array.isArray(current) ? current.filter((t) => t && t.id !== id) : []));
+    if (threadId === id) newChat();
   }
 
   async function renameThread(id: string, newTitle: string) {
@@ -96,7 +121,9 @@ export default function Home() {
       /* best-effort */
     }
     setThreads((current) =>
-      current.map((t) => (t.id === id ? { ...t, title: trimmed } : t))
+      Array.isArray(current)
+        ? current.map((t) => (t && t.id === id ? { ...t, title: trimmed } : t))
+        : []
     );
   }
 
@@ -184,7 +211,7 @@ export default function Home() {
 
       setThreads((cur) => [
         { id: threadId, title: text.slice(0, 48), messages: [] },
-        ...cur.filter((t) => t.id !== threadId),
+        ...(Array.isArray(cur) ? cur.filter((t) => t && t.id !== threadId) : []),
       ]);
     } catch (error) {
       const msg =
@@ -237,7 +264,7 @@ export default function Home() {
 
     let activeThreadId = threadId;
     if (!activeThreadId) {
-      activeThreadId = crypto.randomUUID();
+      activeThreadId = safeUUID();
       setThreadId(activeThreadId);
     }
 

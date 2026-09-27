@@ -52,7 +52,7 @@ export default function Header({
         {onNewChat && (
           <button
             type="button"
-            onClick={onNewChat}
+            onClick={() => onNewChat()}
             className="flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 hover:border-zinc-700 transition"
             title="Start new chat"
           >
