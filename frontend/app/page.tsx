@@ -1,29 +1,40 @@
 "use client";
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { ArrowUp, Square, Loader2, Upload } from "lucide-react";
+import {
+  ArrowUp,
+  Square,
+  Loader2,
+  Upload,
+  Globe,
+  Code2,
+  BarChart3,
+  FileText,
+  X,
+} from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
-import HeroSection from "./components/HeroSection";
 import ChatMessage from "./components/ChatMessage";
 import { Message, Thread } from "./components/types";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 function safeUUID(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    try {
-      return crypto.randomUUID();
-    } catch {
-      /* fallback */
-    }
-  }
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch { /* fallback */ }
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
 }
+
+const QUICK_CHIPS = [
+  { label: "Deep Web Research", icon: Globe, iconClass: "text-sky-400", prompt: "Fetch and summarize the latest updates from https://news.ycombinator.com" },
+  { label: "Python Sandbox", icon: Code2, iconClass: "text-emerald-400", prompt: "Run Python to calculate compound interest on $25,000 at 8% annual return over 15 years." },
+  { label: "Tabular Data Profiling", icon: BarChart3, iconClass: "text-amber-400", prompt: "Analyze this dataset structure: Month,Signups,Churn,Revenue\nJan,1200,45,24000\nFeb,1500,50,30000\nMar,1850,52,37000" },
+  { label: "Document Vector Search", icon: FileText, iconClass: "text-indigo-400", prompt: "What are the primary conclusions, metrics, and risks highlighted in my uploaded document?" },
+];
 
 export default function Home() {
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -66,36 +77,24 @@ export default function Home() {
     }
   }
 
-  function newChat(existing?: Thread[] | unknown) {
-    try {
-      abortRef.current?.abort();
-    } catch {
-      /* ignore */
-    }
+  function resetChat(id: string, msgs: Message[] = []) {
+    try { abortRef.current?.abort(); } catch { /* ignore */ }
     setBusy(false);
     setStreaming(false);
     setActiveTool(null);
-    const id = safeUUID();
     setThreadId(id);
-    setMessages([]);
+    setMessages(msgs);
+  }
+
+  function newChat(existing?: Thread[] | unknown) {
+    resetChat(safeUUID(), []);
     setInput("");
     setDocument(null);
-    if (Array.isArray(existing)) {
-      setThreads(existing);
-    }
+    if (Array.isArray(existing)) setThreads(existing);
   }
 
   function selectThread(thread: Thread) {
-    try {
-      abortRef.current?.abort();
-    } catch {
-      /* ignore */
-    }
-    setBusy(false);
-    setStreaming(false);
-    setActiveTool(null);
-    setThreadId(thread.id || safeUUID());
-    setMessages(Array.isArray(thread.messages) ? thread.messages : []);
+    resetChat(thread.id || safeUUID(), Array.isArray(thread.messages) ? thread.messages : []);
   }
 
   async function deleteThread(id: string) {
@@ -319,7 +318,7 @@ export default function Home() {
       />
 
       {/* Main Chat Workspace */}
-      <section className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <section className="relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden ambient-glow">
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           onNewChat={() => newChat()}
@@ -328,11 +327,43 @@ export default function Home() {
 
         {/* Messages container */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
-          <div className="mx-auto flex w-full max-w-3xl flex-col">
+          <div className="mx-auto flex w-full max-w-3xl flex-col min-h-full justify-between">
             {messages.length === 0 ? (
-              <HeroSection
-                onSelectPrompt={(prompt) => setInput(prompt)}
-              />
+              <div className="my-auto flex flex-col items-center justify-center text-center py-12">
+                <div className="relative mb-4 group">
+                  <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-indigo-500/20 to-sky-500/20 blur-xl opacity-70 group-hover:opacity-100 transition duration-500" />
+                  <img
+                    src="/icon.jpg"
+                    alt="Agent-Pilot Logo"
+                    className="relative h-16 w-16 rounded-2xl border border-white/10 shadow-2xl object-cover ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-105"
+                  />
+                </div>
+
+                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
+                  Where will we explore today?
+                </h1>
+                <p className="mt-2 max-w-md text-xs sm:text-sm text-zinc-400 leading-relaxed">
+                  Autonomous workspace for deep web research, code execution, and document intelligence.
+                </p>
+
+                {/* Quick Capability Chips */}
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl">
+                  {QUICK_CHIPS.map((chip, idx) => {
+                    const Icon = chip.icon;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setInput(chip.prompt)}
+                        className="group flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 transition-all duration-150 active:scale-95 shadow-sm"
+                      >
+                        <Icon size={13} className={chip.iconClass} />
+                        <span>{chip.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ) : (
               <div className="space-y-4">
                 {messages.map((message, index) => (
@@ -346,10 +377,10 @@ export default function Home() {
 
                 {/* Active Tool Indicator */}
                 {activeTool && (
-                  <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-300 w-fit">
-                    <Loader2 size={12} className="animate-spin text-zinc-400" />
-                    <span>Executing:</span>
-                    <code className="font-mono text-zinc-200 bg-zinc-800 px-1 py-0.5 rounded text-[11px]">
+                  <div className="flex items-center gap-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-2 text-xs text-indigo-200 w-fit backdrop-blur-md shadow-md animate-pulse">
+                    <Loader2 size={13} className="animate-spin text-indigo-400" />
+                    <span className="text-zinc-400">Agent executing:</span>
+                    <code className="font-mono text-indigo-200 font-medium bg-indigo-500/20 px-1.5 py-0.5 rounded text-[11px]">
                       {activeTool}
                     </code>
                   </div>
@@ -357,9 +388,9 @@ export default function Home() {
 
                 {/* Thinking Indicator */}
                 {busy && !streaming && !activeTool && (
-                  <div className="flex items-center gap-2 rounded-md border border-zinc-800/80 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400 w-fit">
-                    <Loader2 size={12} className="animate-spin text-zinc-500" />
-                    <span>Thinking…</span>
+                  <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2 text-xs text-zinc-400 w-fit backdrop-blur-md shadow-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping" />
+                    <span className="animate-pulse">Thinking…</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -368,64 +399,92 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Input Bar (Linear / Claude Style) */}
-        <div className="shrink-0 border-t border-zinc-800/80 bg-[#09090b] px-4 sm:px-6 py-3">
+        {/* Input Bar */}
+        <div className="shrink-0 px-4 sm:px-6 py-3.5">
           <form
             onSubmit={send}
-            className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-zinc-800 bg-[#121215] p-2 focus-within:border-zinc-700 transition"
+            className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl glass-input-box overflow-hidden"
           >
-            <button
-              type="button"
-              onClick={() => chatFileInputRef.current?.click()}
-              disabled={uploading}
-              className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition"
-              title="Attach document (.pdf, .docx, .csv, .txt)"
-            >
-              <Upload size={14} className={uploading ? "animate-pulse text-zinc-300" : ""} />
-            </button>
-            <input
-              ref={chatFileInputRef}
-              type="file"
-              accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,application/pdf"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void upload(file);
-                e.target.value = "";
-              }}
-            />
+            {document && (
+              <div className="flex items-center justify-between border-b border-white/[0.06] px-3.5 py-1.5 text-xs text-zinc-400 bg-white/[0.02]">
+                <div className="flex items-center gap-2 truncate">
+                  <FileText size={13} className="text-indigo-400 shrink-0" />
+                  <span className="font-medium text-zinc-200 truncate">{String(document.filename || "Attached document")}</span>
+                  <span className="text-[10px] text-zinc-500 shrink-0">({String(document.chunks || 0)} chunks)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDocument(null)}
+                  className="text-zinc-500 hover:text-zinc-200 p-0.5 rounded transition ml-2"
+                  title="Detach document"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
 
-              <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={busy}
-              placeholder={uploading ? "Indexing attached document..." : "Ask anything, run code, scrape URLs, or query documents..."}
-              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none"
-            />
-
-            {streaming ? (
+            <div className="flex items-end gap-2 p-2.5">
               <button
                 type="button"
-                onClick={stopStreaming}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-750 transition"
-                title="Stop generation"
+                onClick={() => chatFileInputRef.current?.click()}
+                disabled={uploading}
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition disabled:opacity-50"
+                title="Attach document (.pdf, .docx, .csv, .txt)"
               >
-                <Square size={12} />
-                <span>Stop</span>
+                <Upload size={15} className={uploading ? "animate-pulse text-indigo-400" : ""} />
               </button>
-            ) : (
-              <button
-                disabled={busy || !input.trim()}
-                type="submit"
-                className="flex items-center justify-center rounded-lg bg-zinc-100 p-2 text-zinc-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-30"
-              >
-                <ArrowUp size={15} />
-              </button>
-            )}
+              <input
+                ref={chatFileInputRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void upload(file);
+                  e.target.value = "";
+                }}
+              />
+
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send(e);
+                  }
+                }}
+                rows={1}
+                disabled={busy}
+                placeholder={uploading ? "Indexing attached document..." : "Ask anything, run code, scrape URLs, or query documents..."}
+                className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none max-h-32 leading-relaxed"
+              />
+
+              {streaming ? (
+                <button
+                  type="button"
+                  onClick={stopStreaming}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.1] transition active:scale-95"
+                  title="Stop generation"
+                >
+                  <Square size={12} />
+                  <span>Stop</span>
+                </button>
+              ) : (
+                <button
+                  disabled={busy || !input.trim()}
+                  type="submit"
+                  className="flex items-center justify-center rounded-xl bg-zinc-100 p-2 text-zinc-950 transition hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-20 active:scale-95 shadow-sm"
+                >
+                  <ArrowUp size={15} />
+                </button>
+              )}
+            </div>
           </form>
 
-          <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-center text-[11px] text-zinc-500 px-1">
-            <span>Press <kbd className="text-zinc-400 font-mono">↵</kbd> to send</span>
+          <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between text-[11px] text-zinc-500 px-2">
+            <span>Agent-Pilot 2.0</span>
+            <span>Enter to send · Shift+Enter for new line</span>
           </div>
         </div>
       </section>

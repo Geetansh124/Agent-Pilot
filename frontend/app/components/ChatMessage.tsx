@@ -12,6 +12,55 @@ interface ChatMessageProps {
   streaming: boolean;
 }
 
+function CodeBlock({ children, className, ...props }: React.ComponentPropsWithoutRef<"code">) {
+  const [copied, setCopied] = useState(false);
+  const match = /language-(\w+)/.exec(className || "");
+  const lang = match ? match[1] : "code";
+  const codeString = String(children).replace(/\n$/, "");
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(codeString);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* fallback */
+    }
+  };
+
+  return (
+    <div className="relative my-3 rounded-xl border border-white/[0.08] bg-[#0b0b0e] overflow-hidden shadow-lg shadow-black/40">
+      <div className="flex items-center justify-between px-3.5 py-1.5 border-b border-white/[0.06] bg-white/[0.02]">
+        <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 font-medium">
+          {lang}
+        </span>
+        <button
+          onClick={handleCopyCode}
+          type="button"
+          className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition py-0.5 px-1.5 rounded hover:bg-white/[0.05]"
+        >
+          {copied ? (
+            <>
+              <Check size={12} className="text-emerald-400" />
+              <span className="text-emerald-400">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy size={12} />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="p-3.5 overflow-x-auto text-xs text-zinc-200 font-mono leading-relaxed">
+        <code className={className} {...props}>
+          {children}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
 export default function ChatMessage({
   message,
   isLastAssistant,
@@ -38,7 +87,7 @@ export default function ChatMessage({
           <img
             src="/icon.jpg"
             alt="Agent-Pilot"
-            className="h-7 w-7 rounded-lg border border-zinc-800 object-cover shadow-sm"
+            className="h-7 w-7 rounded-lg border border-white/10 object-cover shadow-md ring-1 ring-white/5"
           />
         </div>
       )}
@@ -46,8 +95,8 @@ export default function ChatMessage({
       <div
         className={`relative flex max-w-[85%] flex-col rounded-2xl px-4 py-3 text-sm leading-relaxed transition-all ${
           isUser
-            ? "bg-zinc-800 text-zinc-100 border border-zinc-700/60 shadow-sm"
-            : "border border-zinc-800/80 bg-zinc-900/40 text-zinc-200"
+            ? "bg-gradient-to-br from-zinc-800/90 to-zinc-850/90 text-zinc-100 border border-white/[0.1] shadow-lg shadow-black/20"
+            : "border border-white/[0.08] bg-[#121216]/80 backdrop-blur-md text-zinc-200 shadow-md shadow-black/30"
         }`}
       >
         {/* Copy Button on Message Hover */}
@@ -55,7 +104,7 @@ export default function ChatMessage({
           <button
             onClick={handleCopy}
             title="Copy message"
-            className="absolute top-2.5 right-2.5 p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition"
+            className="absolute top-2.5 right-2.5 p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.08] opacity-0 group-hover:opacity-100 transition shadow-sm"
           >
             {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
           </button>
@@ -70,10 +119,10 @@ export default function ChatMessage({
                 remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ ...props }) => (
-                    <h1 className="mb-2 mt-3 text-base font-semibold text-zinc-100" {...props} />
+                    <h1 className="mb-2 mt-3 text-base font-semibold text-zinc-100 tracking-tight" {...props} />
                   ),
                   h2: ({ ...props }) => (
-                    <h2 className="mb-2 mt-2.5 text-sm font-semibold text-zinc-200" {...props} />
+                    <h2 className="mb-2 mt-2.5 text-sm font-semibold text-zinc-200 tracking-tight" {...props} />
                   ),
                   h3: ({ ...props }) => (
                     <h3 className="mb-1 mt-2 text-xs font-semibold text-zinc-300" {...props} />
@@ -84,39 +133,37 @@ export default function ChatMessage({
                   li: ({ ...props }) => <li className="leading-relaxed" {...props} />,
                   strong: ({ ...props }) => <strong className="font-semibold text-zinc-100" {...props} />,
                   blockquote: ({ ...props }) => (
-                    <blockquote className="border-l-2 border-zinc-700 pl-3 italic text-zinc-400 my-2" {...props} />
+                    <blockquote className="border-l-2 border-indigo-500/60 pl-3 italic text-zinc-400 my-2 bg-indigo-500/[0.03] py-1 rounded-r" {...props} />
                   ),
                   table: ({ ...props }) => (
-                    <div className="my-2.5 overflow-x-auto rounded-lg border border-zinc-800">
+                    <div className="my-2.5 overflow-x-auto rounded-xl border border-white/[0.08] shadow-sm">
                       <table className="w-full text-left text-xs border-collapse" {...props} />
                     </div>
                   ),
                   th: ({ ...props }) => (
-                    <th className="border-b border-zinc-800 bg-zinc-900/80 p-2 font-medium text-zinc-300" {...props} />
+                    <th className="border-b border-white/[0.08] bg-white/[0.03] p-2.5 font-medium text-zinc-300" {...props} />
                   ),
                   td: ({ ...props }) => (
-                    <td className="border-b border-zinc-800/80 p-2 text-zinc-400" {...props} />
+                    <td className="border-b border-white/[0.06] p-2.5 text-zinc-400" {...props} />
                   ),
                   code: ({ className, children, ...props }) => {
                     const isInline = !className && typeof children === "string" && !children.includes("\n");
                     return isInline ? (
                       <code
-                        className="rounded bg-zinc-800/90 px-1.5 py-0.5 font-mono text-[11px] text-zinc-200 border border-zinc-700/60"
+                        className="rounded-md bg-white/[0.07] px-1.5 py-0.5 font-mono text-[11px] text-zinc-200 border border-white/[0.08]"
                         {...props}
                       >
                         {children}
                       </code>
                     ) : (
-                      <div className="relative my-2.5 rounded-lg border border-zinc-800 bg-[#0d0d10] overflow-hidden">
-                        <pre className="p-3 overflow-x-auto text-xs text-zinc-200 font-mono">
-                          <code {...props}>{children}</code>
-                        </pre>
-                      </div>
+                      <CodeBlock className={className} {...props}>
+                        {children}
+                      </CodeBlock>
                     );
                   },
                   a: ({ ...props }) => (
                     <a
-                      className="text-blue-400 hover:text-blue-300 underline decoration-zinc-600 transition"
+                      className="text-indigo-400 hover:text-indigo-300 underline decoration-indigo-500/40 hover:decoration-indigo-400 transition"
                       target="_blank"
                       rel="noopener noreferrer"
                       {...props}
@@ -130,14 +177,14 @@ export default function ChatMessage({
           )}
 
           {isLastAssistant && streaming && (
-            <span className="inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-zinc-400 ml-1.5 align-middle" />
+            <span className="inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-indigo-400 shadow-[0_0_8px_rgba(99,102,241,0.8)] ml-1.5 align-middle" />
           )}
         </div>
       </div>
 
       {isUser && (
         <div className="shrink-0 mt-0.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800 border border-white/10 text-zinc-300 shadow-sm">
             <User size={14} />
           </div>
         </div>

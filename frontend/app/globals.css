@@ -54,18 +54,70 @@ button, input, textarea {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Subtle, refined card surfaces */
+/* Subtle, refined surfaces & glassmorphism */
 .surface-panel {
   background: #121215;
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .surface-card {
-  background: #141418;
+  background: rgba(20, 20, 24, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: all 0.15s ease-out;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .surface-card:hover {
-  background: #1a1a20;
-  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(26, 26, 32, 0.85);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px -4px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+.glass-nav {
+  background: rgba(9, 9, 11, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-sidebar {
+  background: rgba(13, 13, 16, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-input-box {
+  background: rgba(18, 18, 22, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-input-box:focus-within {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(99, 102, 241, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Ambient glow background */
+.ambient-glow {
+  background-image:
+    radial-gradient(at 50% 0%, rgba(56, 189, 248, 0.06) 0px, transparent 55%),
+    radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(14, 165, 233, 0.04) 0px, transparent 50%);
+}
+
+/* Shimmer animation for streaming and thinking */
+@keyframes shimmerPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+.animate-shimmer {
+  animation: shimmerPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

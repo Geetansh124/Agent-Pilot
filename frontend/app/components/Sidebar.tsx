@@ -65,15 +65,15 @@ export default function Sidebar({
   if (!sidebarOpen) return null;
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex h-screen w-[290px] shrink-0 flex-col border-r border-zinc-800/80 bg-[#0d0d10] md:static">
+    <aside className="fixed inset-y-0 left-0 z-30 flex h-screen w-[290px] shrink-0 flex-col glass-sidebar md:static">
       {/* Brand Header */}
-      <div className="shrink-0 p-4 border-b border-zinc-800/80">
+      <div className="shrink-0 p-4 border-b border-white/[0.06]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img
               src="/icon.jpg"
               alt="Agent-Pilot Logo"
-              className="h-8 w-8 rounded-lg border border-zinc-800 object-cover shadow-sm"
+              className="h-8 w-8 rounded-lg border border-white/10 object-cover shadow-sm ring-1 ring-white/5"
             />
             <div>
               <div className="text-sm font-semibold tracking-tight text-zinc-100">
@@ -86,7 +86,7 @@ export default function Sidebar({
           </div>
           <button
             onClick={onCloseSidebar}
-            className="rounded-md p-1 text-zinc-400 hover:text-zinc-200 md:hidden"
+            className="rounded-lg p-1 text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] md:hidden transition"
           >
             <X size={16} />
           </button>
@@ -97,7 +97,7 @@ export default function Sidebar({
           <button
             type="button"
             onClick={() => onNewChat()}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 hover:bg-white active:bg-zinc-200 transition shadow-sm cursor-pointer select-none"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-100 px-3.5 py-2 text-xs font-medium text-zinc-950 hover:bg-white active:bg-zinc-200 transition shadow-sm hover:shadow-md cursor-pointer select-none"
           >
             <Plus size={14} />
             <span>New Chat</span>
@@ -106,10 +106,10 @@ export default function Sidebar({
 
         {/* Knowledge Base */}
         <div className="mt-3.5">
-          <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500 mb-1.5">
+          <div className="flex items-center justify-between text-[11px] font-medium text-zinc-400 mb-1.5 px-0.5">
             <span>Knowledge Base</span>
             {document && (
-              <span className="text-[10px] text-zinc-400 font-mono">
+              <span className="text-[10px] text-indigo-300 font-mono px-1.5 py-0.2 rounded bg-indigo-500/10 border border-indigo-500/20">
                 {String(document.chunks || 0)} chunks
               </span>
             )}
@@ -118,9 +118,9 @@ export default function Sidebar({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-2.5 text-xs text-zinc-300 hover:bg-zinc-800/60 hover:border-zinc-700 transition disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5 text-xs text-zinc-300 hover:bg-white/[0.06] hover:border-white/15 transition disabled:opacity-50"
           >
-            <Upload size={14} className={`text-zinc-400 ${uploading ? "animate-pulse" : ""}`} />
+            <Upload size={14} className={`text-indigo-400 ${uploading ? "animate-pulse" : ""}`} />
             <span className="truncate">
               {uploading ? "Indexing document…" : document ? String(document.filename) : "Upload Document"}
             </span>
@@ -141,18 +141,18 @@ export default function Sidebar({
 
       {/* Conversations List with Search */}
       <div className="flex flex-1 flex-col overflow-hidden p-3">
-        <div className="relative mb-2">
+        <div className="relative mb-2.5">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search conversations..."
-            className="w-full rounded-md border border-zinc-800 bg-zinc-900/60 py-1.5 pl-7 pr-2.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-zinc-700"
+            className="w-full rounded-lg border border-white/[0.06] bg-white/[0.03] py-1.5 pl-7 pr-2.5 text-xs text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/30 transition"
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-0.5 pr-1">
+        <div className="flex-1 overflow-y-auto space-y-1 pr-1">
           {filteredThreads.length === 0 ? (
             <div className="py-8 text-center text-xs text-zinc-600">
               No conversations yet
@@ -166,10 +166,10 @@ export default function Sidebar({
                 <div
                   key={thread.id}
                   onClick={() => !isEditing && onSelectThread(thread)}
-                  className={`group relative flex items-center justify-between rounded-md px-2.5 py-2 text-xs transition cursor-pointer ${
+                  className={`group relative flex items-center justify-between rounded-lg px-2.5 py-2 text-xs transition cursor-pointer ${
                     isActive
-                      ? "bg-zinc-800/90 text-zinc-100 font-medium"
-                      : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+                      ? "bg-white/[0.08] text-white font-medium border-l-2 border-indigo-400 shadow-sm"
+                      : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200"
                   }`}
                 >
                   {isEditing ? (
@@ -183,7 +183,7 @@ export default function Sidebar({
                       }}
                       onBlur={() => handleSaveRename(thread.id)}
                       autoFocus
-                      className="w-full rounded bg-black/60 px-2 py-0.5 text-xs text-white outline-none ring-1 ring-zinc-500"
+                      className="w-full rounded bg-black/80 px-2 py-0.5 text-xs text-white outline-none ring-1 ring-indigo-500"
                     />
                   ) : (
                     <>
@@ -194,7 +194,7 @@ export default function Sidebar({
                             e.stopPropagation();
                             handleStartRename(thread);
                           }}
-                          className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700/50"
+                          className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.08] transition"
                         >
                           <Pencil size={11} />
                         </button>
@@ -203,7 +203,7 @@ export default function Sidebar({
                             e.stopPropagation();
                             onDeleteThread(thread.id);
                           }}
-                          className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-700/50"
+                          className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-white/[0.08] transition"
                         >
                           <Trash2 size={11} />
                         </button>
