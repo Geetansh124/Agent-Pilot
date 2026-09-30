@@ -250,7 +250,7 @@ export default function Home() {
         ...cur,
         {
           role: "assistant",
-          content: `📄 **${data.filename || file.name}** indexed & synced to Google Drive (${data.chunks || 0} chunks).\n\nYou can now ask grounded questions citing this document!`,
+          content: `📄 **${data.filename || file.name}** indexed & synced to Cloud Storage (${data.chunks || 0} chunks).\n\nYou can now ask grounded questions citing this document!`,
         },
       ]);
     } catch (error) {
@@ -370,7 +370,7 @@ export default function Home() {
                   <span className="font-medium text-zinc-200 truncate">{String(document.filename || "Attached document")}</span>
                   <span className="text-[10px] text-zinc-500 shrink-0">({String(document.chunks || 0)} chunks)</span>
                   <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20">
-                    G-Drive
+                    Cloud
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -399,7 +399,7 @@ export default function Home() {
                 onClick={() => setDocumentHubOpen(true)}
                 disabled={uploading}
                 className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition disabled:opacity-50 cursor-pointer"
-                title="Open Google Drive Document Hub"
+                title="Open Document Cloud Hub"
               >
                 <Cloud size={15} className="text-indigo-400" />
               </button>
@@ -436,7 +436,7 @@ export default function Home() {
                 }}
                 rows={1}
                 disabled={busy}
-                placeholder={uploading ? "Indexing & syncing document to Google Drive..." : "Ask anything, run code, scrape URLs, or query documents..."}
+                placeholder={uploading ? "Indexing & syncing document to Cloud Storage..." : "Ask anything, run code, scrape URLs, or query documents..."}
                 className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none max-h-32 leading-relaxed"
               />
 
@@ -472,7 +472,7 @@ export default function Home() {
       {/* Auth Modal */}
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
 
-      {/* Google Drive Document Cloud Hub Modal */}
+      {/* Document Cloud Hub Modal */}
       <DocumentHubModal
         isOpen={documentHubOpen}
         onClose={() => setDocumentHubOpen(false)}

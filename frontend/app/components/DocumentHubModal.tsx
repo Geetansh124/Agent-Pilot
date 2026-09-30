@@ -60,10 +60,11 @@ export default function DocumentHubModal({
         const data = await res.json();
         setDocuments(data.documents || []);
       } else {
-        setError("Failed to load documents catalog.");
+        setDocuments([]);
       }
     } catch (err) {
-      setError("Network error fetching documents.");
+      console.warn("Fetch documents error:", err);
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
@@ -95,7 +96,8 @@ export default function DocumentHubModal({
         setError(errData.detail || "Upload failed.");
       }
     } catch (err) {
-      setError("Network error uploading document.");
+      console.error("Document upload error:", err);
+      setError("Unable to upload document. Please ensure the backend server is active.");
     } finally {
       setUploading(false);
     }
@@ -167,11 +169,8 @@ export default function DocumentHubModal({
               <Cloud size={20} />
             </div>
             <div>
-              <h2 className="text-base font-semibold tracking-tight text-white flex items-center gap-2">
+              <h2 className="text-base font-semibold tracking-tight text-white">
                 Document Cloud Hub
-                <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                  Google Drive Synced
-                </span>
               </h2>
               <p className="text-xs text-zinc-400">
                 Manage persistent multi-tenant documents and attach them to any active chat thread.
@@ -235,7 +234,7 @@ export default function DocumentHubModal({
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 text-zinc-500 gap-2">
               <Loader2 size={24} className="animate-spin text-indigo-400" />
-              <p className="text-xs">Loading Google Drive catalog…</p>
+              <p className="text-xs">Loading documents catalog…</p>
             </div>
           ) : filteredDocs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -244,7 +243,7 @@ export default function DocumentHubModal({
               </div>
               <h3 className="text-sm font-medium text-zinc-300">No documents found</h3>
               <p className="mt-1 text-xs text-zinc-500 max-w-sm">
-                Upload your PDFs, Word docs, Markdown or CSV files to persist them in Google Drive and query them with grounded AI citations.
+                Upload your PDFs, Word docs, Markdown or CSV files to persist them in secure cloud storage and query them with grounded AI citations.
               </p>
             </div>
           ) : (
@@ -285,7 +284,7 @@ export default function DocumentHubModal({
                           <span>{doc.chunks_count || doc.chunks || 0} chunks</span>
                           <span>•</span>
                           <span className="text-emerald-400/90 font-mono text-[10px]">
-                            🟢 Synced to Drive
+                            🟢 Synced to Cloud
                           </span>
                         </div>
                       </div>
@@ -298,7 +297,7 @@ export default function DocumentHubModal({
                           target="_blank"
                           rel="noreferrer"
                           className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition"
-                          title="Open in Google Drive"
+                          title="View Document"
                         >
                           <ExternalLink size={13} />
                         </a>

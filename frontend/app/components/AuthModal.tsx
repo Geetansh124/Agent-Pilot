@@ -95,7 +95,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: A
           <h2 className="text-xl font-bold tracking-tight text-white">Agent-Pilot</h2>
           <p className="mt-1 text-xs text-zinc-400">
             {mode === "signin"
-              ? "Sign in to access your persistent Google Drive documents"
+              ? "Sign in to access your persistent cloud documents"
               : "Create an autonomous workspace account"}
           </p>
         </div>
@@ -216,7 +216,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: A
         {/* Security Footer Guarantee */}
         <div className="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-zinc-500 border-t border-white/[0.06] pt-4">
           <ShieldCheck size={13} className="text-emerald-400" />
-          <span>Multi-tenant encrypted · Google Drive cloud sync</span>
+          <span>Multi-tenant encrypted · Persistent cloud sync</span>
         </div>
       </div>
     </div>

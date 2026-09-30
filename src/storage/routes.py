@@ -6,6 +6,7 @@ and document lifecycle operations scoped to authenticated users.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from typing import Any, Optional
 
@@ -29,7 +30,7 @@ documents_router = APIRouter()
 ALLOWED_EXTENSIONS = frozenset({
     ".pdf", ".docx", ".doc", ".txt", ".md", ".markdown", ".csv", ".json", ".tsv"
 })
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_MB", "500")) * 1024 * 1024  # 500 MB
 
 
 class DocumentResponse(BaseModel):
@@ -113,8 +114,9 @@ async def _process_document_upload(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
 
     if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+        err_status = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=err_status,
             detail=f"File exceeds maximum allowed size of {MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB.",
         )
 

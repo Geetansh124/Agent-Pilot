@@ -67,7 +67,7 @@ export default function Header({
             title="Open Document Cloud Hub"
           >
             <Cloud size={13} className="text-indigo-400" />
-            <span className="hidden md:inline">Drive Hub</span>
+            <span className="hidden md:inline">Cloud Hub</span>
           </button>
         )}
 

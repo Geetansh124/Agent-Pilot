@@ -32,13 +32,18 @@ from src.agent import hitl_manager
 from src.observability import audit_logger, cost_tracker, estimate_token_count
 
 app = FastAPI(title="Agent-Pilot API", version="1.1.0")
-origins = [
+_default_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+]
+_env_origins = [
     o.strip()
-    for o in os.getenv(
-        "FRONTEND_ORIGIN", "http://localhost:3000,http://localhost:3001"
-    ).split(",")
+    for o in os.getenv("FRONTEND_ORIGIN", "").split(",")
     if o.strip()
 ]
+origins = list(dict.fromkeys(_default_origins + _env_origins))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
