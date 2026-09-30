@@ -131,11 +131,23 @@ async def _process_document_upload(
             metadata={"original_name": filename, "thread_id": thread_id},
         )
     except Exception as exc:
-        logger.error("Storage save failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to persist file to storage backend: {exc}",
-        ) from exc
+        logger.warning("Primary storage save failed (%s), attempting local fallback: %s", type(exc).__name__, exc)
+        from storage.local import LocalStorageBackend
+        try:
+            storage_res = LocalStorageBackend().save_user_document(
+                user_id=user_id,
+                doc_id=doc_id,
+                filename=filename,
+                file_bytes=file_bytes,
+                mime_type=file.content_type,
+                metadata={"original_name": filename, "thread_id": thread_id},
+            )
+        except Exception as local_exc:
+            logger.error("Both primary and fallback storage saves failed: %s", local_exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to persist file to storage backend: {exc}",
+            ) from exc
 
     # 2. Extract, chunk, embed, and persist user-scoped vector store
     chunks_count = 0
@@ -276,6 +288,9 @@ def download_document(doc_id: str, user: dict[str, Any] = Depends(get_current_us
         )
 
     raw_bytes = storage.load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])
+    if not raw_bytes:
+        from storage.local import LocalStorageBackend
+        raw_bytes = LocalStorageBackend().load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])
     if not raw_bytes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document file content not found in storage.")
 

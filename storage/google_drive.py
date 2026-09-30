@@ -79,7 +79,11 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
                         scopes=SCOPES,
                     )
                 credentials.refresh(Request())
-                self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+                import httplib2
+                import google_auth_httplib2
+
+                http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http(timeout=120.0))
+                self._service = build("drive", "v3", http=http, cache_discovery=False)
                 self._enabled = True
                 logger.info("Google Drive storage initialized successfully via User OAuth2 (personal quota active).")
                 return
@@ -95,12 +99,15 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
         try:
             from google.oauth2 import service_account
             from googleapiclient.discovery import build
+            import httplib2
+            import google_auth_httplib2
 
             creds_data = self._parse_credentials_payload(self._raw_creds)
             credentials = service_account.Credentials.from_service_account_info(
                 creds_data, scopes=SCOPES
             )
-            self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+            http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http(timeout=120.0))
+            self._service = build("drive", "v3", http=http, cache_discovery=False)
             self._enabled = True
             logger.info("Google Drive storage initialized successfully via Service Account.")
         except Exception as exc:
