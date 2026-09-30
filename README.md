@@ -1,13 +1,3 @@
----
-title: Agent Pilot Backend
-emoji: ✈️
-colorFrom: indigo
-colorTo: purple
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Agent-Pilot ✈️
 
 Agent-Pilot is an intelligent document workspace and RAG-powered chatbot platform. It allows users to upload PDF documents, index them using vector embeddings (FAISS + HuggingFace sentence-transformers), and engage in grounded conversational Q&A backed by LangGraph, NVIDIA ChatNVIDIA LLM, search tools, stock price lookup, and calculators.
