@@ -29,7 +29,7 @@ export default function Header({
         <div className="flex items-center gap-2.5">
           <div className="relative flex items-center justify-center">
             <img
-              src="/icon.jpg"
+              src="/logo.jpg"
               alt="Agent-Pilot Logo"
               className="h-6 w-6 rounded-md border border-white/10 object-cover shadow-sm ring-1 ring-white/5"
             />

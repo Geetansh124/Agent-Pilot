@@ -333,7 +333,7 @@ export default function Home() {
                 <div className="relative mb-4 group">
                   <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-indigo-500/20 to-sky-500/20 blur-xl opacity-70 group-hover:opacity-100 transition duration-500" />
                   <img
-                    src="/icon.jpg"
+                    src="/logo.jpg"
                     alt="Agent-Pilot Logo"
                     className="relative h-16 w-16 rounded-2xl border border-white/10 shadow-2xl object-cover ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-105"
                   />

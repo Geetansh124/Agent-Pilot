@@ -85,7 +85,7 @@ export default function ChatMessage({
       {!isUser && (
         <div className="shrink-0 mt-0.5">
           <img
-            src="/icon.jpg"
+            src="/logo.jpg"
             alt="Agent-Pilot"
             className="h-7 w-7 rounded-lg border border-white/10 object-cover shadow-md ring-1 ring-white/5"
           />

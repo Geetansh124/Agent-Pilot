@@ -71,7 +71,7 @@ export default function Sidebar({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img
-              src="/icon.jpg"
+              src="/logo.jpg"
               alt="Agent-Pilot Logo"
               className="h-8 w-8 rounded-lg border border-white/10 object-cover shadow-sm ring-1 ring-white/5"
             />

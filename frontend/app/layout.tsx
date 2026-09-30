@@ -9,11 +9,11 @@ export const metadata: Metadata = {
   description: "Your intelligent document and agent workspace",
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/icon.jpg", type: "image/jpeg" },
+      { url: "/logo.svg", type: "image/svg+xml" },
+      { url: "/logo.jpg", type: "image/jpeg" },
     ],
-    shortcut: "/icon.svg",
-    apple: "/apple-icon.jpg",
+    shortcut: "/logo.svg",
+    apple: "/logo.jpg",
   },
 };
 
@@ -25,8 +25,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/apple-icon.jpg" />
+        <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/logo.jpg" />
       </head>
       <body className={inter.className}>{children}</body>
     </html>
