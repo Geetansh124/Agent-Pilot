@@ -317,3 +317,116 @@ class LocalStorageBackend(StorageBackend):
     def restore_memory(self, memory_path: str = "memory.db") -> bool:
         return self.restore_database(memory_path)
 
+    def save_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+        file_bytes: bytes,
+        mime_type: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Save a user-scoped document in workspaces_storage/users/{user_id}/documents/{doc_id}/."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        clean_fn = Path(filename).name
+
+        doc_dir = self.base_dir / "users" / clean_uid / "documents" / clean_did
+        doc_dir.mkdir(parents=True, exist_ok=True)
+
+        target_file = doc_dir / clean_fn
+        target_file.write_bytes(file_bytes)
+
+        meta_payload = {
+            "doc_id": doc_id,
+            "user_id": user_id,
+            "filename": clean_fn,
+            "size_bytes": len(file_bytes),
+            "mime_type": mime_type or guess_mime_type(clean_fn),
+            **(metadata or {}),
+        }
+        (doc_dir / "metadata.json").write_text(json.dumps(meta_payload, indent=2), encoding="utf-8")
+
+        return {
+            "doc_id": doc_id,
+            "user_id": user_id,
+            "filename": clean_fn,
+            "file_id": str(target_file),
+            "drive_file_id": str(target_file),
+            "web_view_link": None,
+            "drive_folder_id": str(doc_dir),
+            "size_bytes": len(file_bytes),
+            "mime_type": mime_type or guess_mime_type(clean_fn),
+            "success": True,
+        }
+
+    def load_user_document_bytes(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+    ) -> Optional[bytes]:
+        """Load document raw bytes for a user."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        target = self.base_dir / "users" / clean_uid / "documents" / clean_did / Path(filename).name
+        if target.exists():
+            return target.read_bytes()
+        return None
+
+    def delete_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: Optional[str] = None,
+    ) -> bool:
+        """Delete user document directory and all files."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        doc_dir = self.base_dir / "users" / clean_uid / "documents" / clean_did
+        if not doc_dir.exists():
+            return True
+        try:
+            import shutil
+            shutil.rmtree(doc_dir, ignore_errors=True)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to delete user document directory: %s", exc)
+            return False
+
+    def save_user_vector_store(self, user_id: str, doc_id: str, vector_store: Any) -> bool:
+        """Persist FAISS index under workspaces_storage/users/{user_id}/vectors/{doc_id}/."""
+        if vector_store is None:
+            return False
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        vec_dir = self.base_dir / "users" / clean_uid / "vectors" / clean_did
+        vec_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            vector_store.save_local(str(vec_dir))
+            return True
+        except Exception as exc:
+            logger.warning("Local save user vector store failed: %s", exc)
+            return False
+
+    def load_user_vector_store(self, user_id: str, doc_id: str, embeddings: Any) -> Optional[Any]:
+        """Load FAISS index from workspaces_storage/users/{user_id}/vectors/{doc_id}/."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        vec_dir = self.base_dir / "users" / clean_uid / "vectors" / clean_did
+        if not ((vec_dir / "index.faiss").exists() and (vec_dir / "index.pkl").exists()):
+            return None
+        try:
+            from langchain_community.vectorstores import FAISS
+            return FAISS.load_local(str(vec_dir), embeddings, allow_dangerous_deserialization=True)
+        except Exception as exc:
+            logger.warning("Local load user vector store failed: %s", exc)
+            return None
+
+    def has_user_vector_store(self, user_id: str, doc_id: str) -> bool:
+        """Check whether vector store exists under users/{user_id}/vectors/{doc_id}/."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        vec_dir = self.base_dir / "users" / clean_uid / "vectors" / clean_did
+        return (vec_dir / "index.faiss").exists() and (vec_dir / "index.pkl").exists()
+

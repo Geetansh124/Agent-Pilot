@@ -96,27 +96,15 @@ _THREAD_METADATA: Dict[str, dict] = {}
 
 
 def _get_retriever(thread_id: Optional[str]):
-    """Fetch hybrid retriever from multi_doc_manager or restore from storage backend."""
+    """Fetch hybrid retriever from multi_doc_manager or restore on demand from storage."""
     if not thread_id:
         return None
     tid = str(thread_id)
-    hybrid = multi_doc_manager.get_hybrid_retriever(tid)
+    hybrid = multi_doc_manager.get_or_restore_retriever(tid, get_embeddings(), storage)
     if hybrid is not None:
         return hybrid
-    if tid in _THREAD_RETRIEVERS:
-        return _THREAD_RETRIEVERS[tid]
-    if storage.enabled:
-        retriever_store = storage.load_vector_store(tid, get_embeddings())
-        if retriever_store is not None:
-            multi_doc_manager.register_vector_store(tid, retriever_store)
-            hybrid = multi_doc_manager.get_hybrid_retriever(tid)
-            if hybrid is not None:
-                return hybrid
-            _THREAD_RETRIEVERS[tid] = retriever_store.as_retriever(
-                search_type="mmr", search_kwargs={"k": 5, "fetch_k": 15, "lambda_mult": 0.7}
-            )
-            return _THREAD_RETRIEVERS[tid]
-    return None
+    return _THREAD_RETRIEVERS.get(tid)
+
 
 
 def ingest_pdf(file_bytes: bytes, thread_id: str, filename: Optional[str] = None) -> dict:

@@ -290,3 +290,170 @@ def revoke_all_user_refresh_tokens(user_id: str, db_path: Optional[str] = None) 
         cursor = conn.cursor()
         cursor.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
         conn.commit()
+
+
+def save_document_record(
+    doc_id: str,
+    user_id: str,
+    filename: str,
+    size_bytes: int,
+    mime_type: Optional[str] = None,
+    drive_file_id: Optional[str] = None,
+    drive_web_link: Optional[str] = None,
+    drive_folder_id: Optional[str] = None,
+    chunks_count: int = 0,
+    status: str = "ready",
+    db_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """Store or update document metadata record in documents table."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO documents (
+                id, user_id, filename, mime_type, size_bytes,
+                drive_file_id, drive_web_link, drive_folder_id, chunks_count, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                filename = excluded.filename,
+                mime_type = excluded.mime_type,
+                size_bytes = excluded.size_bytes,
+                drive_file_id = excluded.drive_file_id,
+                drive_web_link = excluded.drive_web_link,
+                drive_folder_id = excluded.drive_folder_id,
+                chunks_count = excluded.chunks_count,
+                status = excluded.status
+            """,
+            (
+                doc_id,
+                user_id,
+                filename,
+                mime_type or "application/octet-stream",
+                size_bytes,
+                drive_file_id,
+                drive_web_link,
+                drive_folder_id,
+                chunks_count,
+                status,
+            ),
+        )
+        conn.commit()
+
+    return {
+        "id": doc_id,
+        "user_id": user_id,
+        "filename": filename,
+        "mime_type": mime_type,
+        "size_bytes": size_bytes,
+        "drive_file_id": drive_file_id,
+        "drive_web_link": drive_web_link,
+        "drive_folder_id": drive_folder_id,
+        "chunks_count": chunks_count,
+        "status": status,
+    }
+
+
+def list_user_documents(user_id: str, db_path: Optional[str] = None) -> list[dict[str, Any]]:
+    """List all documents belonging to a user, ordered by creation time descending."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, user_id, filename, mime_type, size_bytes,
+                   drive_file_id, drive_web_link, drive_folder_id, chunks_count, status, created_at
+            FROM documents
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            """,
+            (user_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_user_document(doc_id: str, user_id: str, db_path: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """Get single document metadata, strictly validating ownership by user_id."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, user_id, filename, mime_type, size_bytes,
+                   drive_file_id, drive_web_link, drive_folder_id, chunks_count, status, created_at
+            FROM documents
+            WHERE id = ? AND user_id = ?
+            """,
+            (doc_id, user_id),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def delete_user_document_record(doc_id: str, user_id: str, db_path: Optional[str] = None) -> bool:
+    """Delete document record if owned by user_id."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def attach_document_to_thread(
+    thread_id: str,
+    doc_id: str,
+    user_id: str,
+    db_path: Optional[str] = None,
+) -> bool:
+    """Associate an active document with a thread ensuring user tenant ownership."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        # Verify document ownership
+        cursor.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id))
+        if not cursor.fetchone():
+            return False
+
+        # Upsert thread with active_document_id
+        cursor.execute(
+            """
+            INSERT INTO threads (id, user_id, active_document_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                active_document_id = excluded.active_document_id,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (thread_id, user_id, doc_id),
+        )
+        conn.commit()
+        return True
+
+
+def get_thread_active_document(
+    thread_id: str,
+    user_id: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Retrieve active document metadata for a thread belonging to the user."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        if user_id:
+            cursor.execute(
+                """
+                SELECT d.id, d.id AS doc_id, d.user_id, d.filename, d.mime_type, d.size_bytes,
+                       d.drive_file_id, d.drive_web_link, d.drive_folder_id, d.chunks_count, d.status
+                FROM threads t
+                JOIN documents d ON t.active_document_id = d.id
+                WHERE t.id = ? AND t.user_id = ?
+                """,
+                (thread_id, user_id),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT d.id, d.id AS doc_id, d.user_id, d.filename, d.mime_type, d.size_bytes,
+                       d.drive_file_id, d.drive_web_link, d.drive_folder_id, d.chunks_count, d.status
+                FROM threads t
+                JOIN documents d ON t.active_document_id = d.id
+                WHERE t.id = ?
+                """,
+                (thread_id,),
+            )
+        row = cursor.fetchone()
+        return dict(row) if row else None

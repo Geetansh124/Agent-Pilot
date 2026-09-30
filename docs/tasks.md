@@ -44,16 +44,16 @@
 * **Assignee**: `system-architect` & `coder`
 * **Objective**: Extend Google Drive storage service to organize files under `Agent-Pilot/users/{user_id}/documents/{doc_id}/`.
 * **Acceptance Criteria**:
-  - [ ] Creates user directory on first upload.
-  - [ ] Upload returns `drive_file_id`, `web_view_link`, and file size.
-  - [ ] Storage metadata saved in `documents` database table.
+  - [x] Creates user directory on first upload.
+  - [x] Upload returns `drive_file_id`, `web_view_link`, and file size.
+  - [x] Storage metadata saved in `documents` database table.
 
 ### Task 2.2 — Background Document Recovery & Persistence
 * **Assignee**: `coder`
 * **Objective**: Implement `/api/documents` endpoint listing all documents belonging to `current_user`.
 * **Acceptance Criteria**:
-  - [ ] When user reloads the app, existing uploaded documents are listed immediately.
-  - [ ] Files remain persistent in Google Drive after container restarts.
+  - [x] When user reloads the app, existing uploaded documents are listed immediately.
+  - [x] Files remain persistent in Google Drive after container restarts.
 
 ---
 
@@ -63,15 +63,15 @@
 * **Assignee**: `coder`
 * **Objective**: Save vector embeddings in user-scoped partitions (`storage/users/{user_id}/vectors/{doc_id}/`).
 * **Acceptance Criteria**:
-  - [ ] Vector store file syncs to Google Drive upon generation.
-  - [ ] Cache warms up on demand when attaching a historical document.
+  - [x] Vector store file syncs to Google Drive upon generation.
+  - [x] Cache warms up on demand when attaching a historical document.
 
 ### Task 3.2 — Document Attach & Grounded Q&A
 * **Assignee**: `coder`
 * **Objective**: Allow users to attach any historical document from their Google Drive catalog to an active thread.
 * **Acceptance Criteria**:
-  - [ ] Grounded Q&A cites sections from the user's selected document.
-  - [ ] Cross-tenant access is blocked with HTTP 404/403.
+  - [x] Grounded Q&A cites sections from the user's selected document.
+  - [x] Cross-tenant access is blocked with HTTP 404/403.
 
 ---
 

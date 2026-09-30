@@ -25,6 +25,7 @@ from langraph_rag_backend import (
 )
 from src.rag import multi_doc_manager
 from src.auth import auth_router, create_access_token, decode_and_verify_token, get_current_user, init_auth_db
+from src.storage.routes import documents_router
 from src.security import sanitize_output, validate_input_prompt
 from src.agent import hitl_manager
 from src.observability import audit_logger, cost_tracker, estimate_token_count
@@ -46,6 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(documents_router, prefix="/api", tags=["documents"])
 
 # ---------------------------------------------------------------------------
 # Rate Limiting

@@ -647,3 +647,202 @@ class GoogleDriveStorage(StorageBackend):
     def restore_memory(self, memory_path: str = "memory.db") -> bool:
         """Restore long-term memory SQLite store from Google Drive."""
         return self.restore_database(memory_path)
+
+    def get_or_create_user_doc_folder(self, user_id: str, doc_id: str) -> str:
+        """Resolve or create Agent-Pilot/users/{user_id}/documents/{doc_id}/ folder in Google Drive."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        cache_key = f"user_doc/{clean_uid}/{clean_did}"
+        if cache_key in self._folder_cache:
+            return self._folder_cache[cache_key]
+
+        root_id = self._get_root_id()
+        users_folder_id = self.get_or_create_folder("users", root_id)
+        user_folder_id = self.get_or_create_folder(clean_uid, users_folder_id)
+        docs_folder_id = self.get_or_create_folder("documents", user_folder_id)
+        doc_folder_id = self.get_or_create_folder(clean_did, docs_folder_id)
+
+        self._folder_cache[cache_key] = doc_folder_id
+        return doc_folder_id
+
+    def save_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+        file_bytes: bytes,
+        mime_type: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Save a user-scoped document under Agent-Pilot/users/{user_id}/documents/{doc_id}/."""
+        if not self._enabled:
+            return {"error": "Google Drive storage disabled", "success": False}
+
+        clean_fn = Path(filename).name
+        doc_folder_id = self.get_or_create_user_doc_folder(user_id, doc_id)
+        mime = mime_type or guess_mime_type(clean_fn)
+
+        from googleapiclient.http import MediaIoBaseUpload
+
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime, resumable=len(file_bytes) > 5 * 1024 * 1024)
+
+        escaped_name = self._escape_query_str(clean_fn)
+        q = f"'{doc_folder_id}' in parents and name = '{escaped_name}' and trashed = false"
+        res = self._service.files().list(
+            q=q,
+            spaces="drive",
+            fields="files(id, webViewLink)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
+        files = res.get("files", [])
+
+        if files:
+            file_id = files[0]["id"]
+            updated = self._service.files().update(
+                fileId=file_id,
+                media_body=media,
+                fields="id, name, size, mimeType, modifiedTime, webViewLink",
+                supportsAllDrives=True,
+            ).execute()
+            item = updated
+        else:
+            meta = {"name": clean_fn, "parents": [doc_folder_id]}
+            created = self._service.files().create(
+                body=meta,
+                media_body=media,
+                fields="id, name, size, mimeType, modifiedTime, webViewLink",
+                supportsAllDrives=True,
+            ).execute()
+            item = created
+
+        meta_payload = {
+            "doc_id": doc_id,
+            "user_id": user_id,
+            "filename": clean_fn,
+            "size_bytes": len(file_bytes),
+            "mime_type": mime,
+            **(metadata or {}),
+        }
+        meta_media = MediaIoBaseUpload(
+            io.BytesIO(json.dumps(meta_payload, indent=2).encode("utf-8")),
+            mimetype="application/json",
+        )
+        self._service.files().create(
+            body={"name": "metadata.json", "parents": [doc_folder_id]},
+            media_body=meta_media,
+            fields="id",
+            supportsAllDrives=True,
+        ).execute()
+
+        return {
+            "doc_id": doc_id,
+            "user_id": user_id,
+            "filename": clean_fn,
+            "file_id": item.get("id"),
+            "drive_file_id": item.get("id"),
+            "web_view_link": item.get("webViewLink"),
+            "drive_folder_id": doc_folder_id,
+            "size_bytes": len(file_bytes),
+            "mime_type": mime,
+            "success": True,
+        }
+
+    def delete_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: Optional[str] = None,
+    ) -> bool:
+        if not self._enabled:
+            return False
+        try:
+            doc_folder_id = self.get_or_create_user_doc_folder(user_id, doc_id)
+            self._service.files().delete(fileId=doc_folder_id, supportsAllDrives=True).execute()
+            cache_key = f"user_doc/{sanitize_thread_id(user_id)}/{sanitize_thread_id(doc_id)}"
+            self._folder_cache.pop(cache_key, None)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to delete user document folder from Google Drive: %s", exc)
+            return False
+
+    def get_or_create_user_vec_folder(self, user_id: str, doc_id: str) -> str:
+        """Resolve or create Agent-Pilot/users/{user_id}/vectors/{doc_id}/ folder in Google Drive."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        cache_key = f"user_vec/{clean_uid}/{clean_did}"
+        if cache_key in self._folder_cache:
+            return self._folder_cache[cache_key]
+
+        root_id = self._get_root_id()
+        users_folder_id = self.get_or_create_folder("users", root_id)
+        user_folder_id = self.get_or_create_folder(clean_uid, users_folder_id)
+        vecs_folder_id = self.get_or_create_folder("vectors", user_folder_id)
+        doc_vec_folder_id = self.get_or_create_folder(clean_did, vecs_folder_id)
+
+        self._folder_cache[cache_key] = doc_vec_folder_id
+        return doc_vec_folder_id
+
+    def save_user_vector_store(self, user_id: str, doc_id: str, vector_store: Any) -> bool:
+        """Persist FAISS index artifacts under Agent-Pilot/users/{user_id}/vectors/{doc_id}/."""
+        if not self._enabled or vector_store is None:
+            return False
+        try:
+            vec_folder_id = self.get_or_create_user_vec_folder(user_id, doc_id)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                vector_store.save_local(temp_dir)
+                for fname in ("index.faiss", "index.pkl"):
+                    fpath = Path(temp_dir) / fname
+                    if fpath.exists():
+                        from googleapiclient.http import MediaIoBaseUpload
+                        media = MediaIoBaseUpload(io.BytesIO(fpath.read_bytes()), mimetype="application/octet-stream")
+                        escaped = self._escape_query_str(fname)
+                        q = f"'{vec_folder_id}' in parents and name = '{escaped}' and trashed = false"
+                        res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
+                        files = res.get("files", [])
+                        if files:
+                            self._service.files().update(fileId=files[0]["id"], media_body=media, supportsAllDrives=True).execute()
+                        else:
+                            self._service.files().create(body={"name": fname, "parents": [vec_folder_id]}, media_body=media, supportsAllDrives=True).execute()
+            return True
+        except Exception as exc:
+            logger.warning("Failed to save user vector store to Google Drive: %s", exc)
+            return False
+
+    def load_user_vector_store(self, user_id: str, doc_id: str, embeddings: Any) -> Optional[Any]:
+        """Download and reconstruct FAISS index from Agent-Pilot/users/{user_id}/vectors/{doc_id}/."""
+        if not self._enabled:
+            return None
+        try:
+            vec_folder_id = self.get_or_create_user_vec_folder(user_id, doc_id)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                for fname in ("index.faiss", "index.pkl"):
+                    escaped = self._escape_query_str(fname)
+                    q = f"'{vec_folder_id}' in parents and name = '{escaped}' and trashed = false"
+                    res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
+                    files = res.get("files", [])
+                    if not files:
+                        return None
+                    file_id = files[0]["id"]
+                    content = self._service.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
+                    (Path(temp_dir) / fname).write_bytes(content)
+                from langchain_community.vectorstores import FAISS
+                return FAISS.load_local(temp_dir, embeddings, allow_dangerous_deserialization=True)
+        except Exception as exc:
+            logger.warning("Failed to load user vector store from Google Drive: %s", exc)
+            return None
+
+    def has_user_vector_store(self, user_id: str, doc_id: str) -> bool:
+        if not self._enabled:
+            return False
+        try:
+            vec_folder_id = self.get_or_create_user_vec_folder(user_id, doc_id)
+            for fname in ("index.faiss", "index.pkl"):
+                escaped = self._escape_query_str(fname)
+                q = f"'{vec_folder_id}' in parents and name = '{escaped}' and trashed = false"
+                res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
+                if not res.get("files"):
+                    return False
+            return True
+        except Exception:
+            return False

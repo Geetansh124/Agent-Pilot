@@ -67,6 +67,65 @@ class MultiDocManager:
         tid = str(thread_id)
         return self._thread_retrievers.get(tid)
 
+    def get_or_restore_retriever(
+        self,
+        thread_id: str,
+        embeddings: Any,
+        storage_backend: Any = None,
+    ) -> Optional[HybridRetriever]:
+        """Fetch active hybrid retriever or restore on demand from persisted vector store."""
+        tid = str(thread_id)
+        if tid in self._thread_retrievers:
+            return self._thread_retrievers[tid]
+
+        # 1. Attempt restoration from user-scoped attached document in database
+        try:
+            from src.auth.database import get_thread_active_document
+            active_doc = get_thread_active_document(tid)
+            if active_doc and storage_backend:
+                uid = active_doc["user_id"]
+                did = active_doc["doc_id"]
+                if hasattr(storage_backend, "has_user_vector_store") and storage_backend.has_user_vector_store(uid, did):
+                    store = storage_backend.load_user_vector_store(uid, did, embeddings)
+                    if store:
+                        self.attach_document(tid, did, active_doc["filename"], store)
+                        return self._thread_retrievers.get(tid)
+        except Exception:
+            pass
+
+        # 2. Fallback: thread-level vector store
+        if storage_backend and getattr(storage_backend, "enabled", False) and hasattr(storage_backend, "load_vector_store"):
+            store = storage_backend.load_vector_store(tid, embeddings)
+            if store is not None:
+                self.register_vector_store(tid, store)
+                return self._thread_retrievers.get(tid)
+
+        return None
+
+    def attach_document(
+        self,
+        thread_id: str,
+        doc_id: str,
+        filename: str,
+        vector_store: FAISS,
+        chunks: Optional[list[Document]] = None,
+    ) -> dict[str, Any]:
+        """Attach a persistent document's vector store to an active thread for grounded Q&A."""
+        tid = str(thread_id)
+        doc_summary = {
+            "doc_id": doc_id,
+            "filename": filename,
+            "chunks": len(chunks) if chunks else 1,
+            "total_thread_docs": len(self._thread_docs.get(tid, [])) + 1,
+        }
+        self.register_vector_store(
+            thread_id=tid,
+            store=vector_store,
+            docs=[doc_summary],
+            chunks=chunks,
+        )
+        return doc_summary
+
     def ingest_document(
         self,
         file_bytes: bytes,

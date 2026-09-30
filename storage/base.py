@@ -209,3 +209,62 @@ class StorageBackend(ABC):
     def health_check(self) -> bool:
         """Check connectivity and operational readiness of the storage provider."""
         pass
+
+    def save_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+        file_bytes: bytes,
+        mime_type: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Save a user-scoped document under users/{user_id}/documents/{doc_id}/."""
+        # Default fallback delegates to category upload
+        rel_path = f"users/{sanitize_thread_id(user_id)}/documents/{sanitize_thread_id(doc_id)}/{filename}"
+        res = self.upload_bytes("documents", user_id, rel_path, file_bytes, mime_type=mime_type)
+        return {
+            "doc_id": doc_id,
+            "user_id": user_id,
+            "filename": filename,
+            "file_id": res.get("file_id"),
+            "drive_file_id": res.get("file_id"),
+            "web_view_link": res.get("web_view_link"),
+            "size_bytes": len(file_bytes),
+            "mime_type": mime_type or guess_mime_type(filename),
+            "success": res.get("success", True),
+        }
+
+    def load_user_document_bytes(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+    ) -> Optional[bytes]:
+        """Download raw bytes of a user document."""
+        rel_path = f"users/{sanitize_thread_id(user_id)}/documents/{sanitize_thread_id(doc_id)}/{filename}"
+        return self.download_bytes("documents", user_id, rel_path)
+
+    def delete_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: Optional[str] = None,
+    ) -> bool:
+        """Delete a user document from storage."""
+        if filename:
+            rel_path = f"users/{sanitize_thread_id(user_id)}/documents/{sanitize_thread_id(doc_id)}/{filename}"
+            return self.delete_file("documents", user_id, rel_path)
+        return True
+
+    def save_user_vector_store(self, user_id: str, doc_id: str, vector_store: Any) -> bool:
+        """Persist FAISS index artifacts under users/{user_id}/vectors/{doc_id}/."""
+        return False
+
+    def load_user_vector_store(self, user_id: str, doc_id: str, embeddings: Any) -> Optional[Any]:
+        """Download and reconstruct FAISS index from users/{user_id}/vectors/{doc_id}/."""
+        return None
+
+    def has_user_vector_store(self, user_id: str, doc_id: str) -> bool:
+        """Check whether vector store exists under users/{user_id}/vectors/{doc_id}/."""
+        return False
