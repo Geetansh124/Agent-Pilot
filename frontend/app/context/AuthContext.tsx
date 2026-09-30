@@ -227,6 +227,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers.set("Authorization", `Bearer ${currentToken}`);
       }
 
+      // When body is FormData, let the browser auto-generate the
+      // multipart/form-data Content-Type with the correct boundary.
+      if (options.body instanceof FormData) {
+        headers.delete("Content-Type");
+      }
+
       let response = await fetch(url, { ...options, headers });
 
       // If token expired (401), attempt refresh and retry once

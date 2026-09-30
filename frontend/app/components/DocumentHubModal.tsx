@@ -92,11 +92,11 @@ export default function DocumentHubModal({
         }
       } else {
         const errData = await res.json().catch(() => ({}));
-        setError(errData.detail || "Upload failed.");
+        setError(errData.detail || `Upload failed (HTTP ${res.status}). Please retry.`);
       }
     } catch (err) {
       console.error("Document upload error:", err);
-      setError("Unable to upload document. Please ensure the backend server is active.");
+      setError("Backend server is currently unreachable. If hosted on a free cloud tier, it may be waking up. Please retry in a few moments.");
     } finally {
       setUploading(false);
     }

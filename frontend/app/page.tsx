@@ -236,8 +236,8 @@ export default function Home() {
       body.append("thread_id", activeThreadId);
 
       const response = await authFetch(`${API}/api/documents/upload`, { method: "POST", body });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Upload failed");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `Upload failed (HTTP ${response.status})`);
 
       setDocument(data);
       setMessages((cur) => [
