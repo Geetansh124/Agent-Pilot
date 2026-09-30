@@ -8,9 +8,15 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialMode?: "signin" | "register";
+  isMandatory?: boolean;
 }
 
-export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: AuthModalProps) {
+export default function AuthModal({
+  isOpen,
+  onClose,
+  initialMode = "signin",
+  isMandatory = false,
+}: AuthModalProps) {
   const { login, register, loginWithGoogle } = useAuth();
   const [mode, setMode] = useState<"signin" | "register">(initialMode);
   const [email, setEmail] = useState("");
@@ -115,19 +121,28 @@ export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: A
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${
+        isMandatory ? "bg-black/85 backdrop-blur-xl" : "bg-black/75 backdrop-blur-md"
+      } animate-in fade-in duration-200`}
+      onClick={() => {
+        if (!isMandatory) onClose();
+      }}
+    >
       <div
         className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 p-6 shadow-2xl backdrop-blur-2xl ring-1 ring-white/5 sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 rounded-xl p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08] transition"
-          title="Close modal"
-        >
-          <X size={18} />
-        </button>
+        {/* Close Button - hidden in mandatory mode */}
+        {!isMandatory && (
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 rounded-xl p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.08] transition"
+            title="Close modal"
+          >
+            <X size={18} />
+          </button>
+        )}
 
         {/* Modal Brand Header */}
         <div className="flex flex-col items-center text-center">
@@ -140,7 +155,9 @@ export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: A
           </div>
           <h2 className="text-xl font-bold tracking-tight text-white">Agent-Pilot</h2>
           <p className="mt-1 text-xs text-zinc-400">
-            {mode === "signin"
+            {isMandatory
+              ? "Sign in or create an account to enter the workspace"
+              : mode === "signin"
               ? "Sign in to access your persistent cloud documents"
               : "Create an autonomous workspace account"}
           </p>

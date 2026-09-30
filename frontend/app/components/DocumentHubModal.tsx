@@ -16,7 +16,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { StoredDocument } from "./types";
+import { StoredDocument, getApiBaseUrl } from "./types";
 
 interface DocumentHubModalProps {
   isOpen: boolean;
@@ -26,8 +26,6 @@ interface DocumentHubModalProps {
   onDocumentAttached: (doc: StoredDocument) => void;
 }
 
-const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
-
 export default function DocumentHubModal({
   isOpen,
   onClose,
@@ -36,6 +34,7 @@ export default function DocumentHubModal({
   onDocumentAttached,
 }: DocumentHubModalProps) {
   const { authFetch, isAuthenticated } = useAuth();
+  const API = getApiBaseUrl();
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);

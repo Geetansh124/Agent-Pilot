@@ -18,19 +18,12 @@ import Header from "./components/Header";
 import ChatMessage from "./components/ChatMessage";
 import AuthModal from "./components/AuthModal";
 import DocumentHubModal from "./components/DocumentHubModal";
-import { Message, Thread, StoredDocument } from "./components/types";
+import { Message, Thread, StoredDocument, getApiBaseUrl } from "./components/types";
 import { useAuth } from "./context/AuthContext";
 
-const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
-
 function safeUUID(): string {
-  try {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  } catch { /* fallback */ }
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => ((Math.random() * 16) | (c === "x" ? 0 : 0x8)).toString(16));
 }
 
 const QUICK_CHIPS = [
@@ -41,7 +34,8 @@ const QUICK_CHIPS = [
 ];
 
 export default function Home() {
-  const { user, authFetch, isAuthenticated } = useAuth();
+  const { user, authFetch, isAuthenticated, isLoading } = useAuth();
+  const API = getApiBaseUrl();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [threadId, setThreadId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -261,29 +255,44 @@ export default function Home() {
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center bg-zinc-950 text-white">
+        <div className="relative mb-4 flex items-center justify-center">
+          <img src="/logo.jpg" alt="Agent-Pilot Logo" className="h-14 w-14 rounded-2xl border border-white/15 object-cover shadow-2xl ring-1 ring-white/10 animate-pulse" />
+        </div>
+        <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <Loader2 size={16} className="animate-spin text-indigo-400" />
+          <span>Verifying workspace session...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="relative flex h-screen w-screen items-center justify-center bg-zinc-950 text-white overflow-hidden">
+        <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-indigo-600/15 blur-[140px] rounded-full" />
+        <div className="pointer-events-none absolute -bottom-40 right-10 w-[500px] h-[400px] bg-purple-600/10 blur-[130px] rounded-full" />
+        <AuthModal isOpen={true} isMandatory={true} onClose={() => {}} />
+      </div>
+    );
+  }
+
   return (
     <main className="flex h-screen w-full overflow-hidden bg-[#09090b] text-zinc-100">
       <Sidebar
-        threads={threads}
-        activeThreadId={threadId}
-        onSelectThread={selectThread}
-        onNewChat={() => newChat()}
-        onDeleteThread={deleteThread}
-        onRenameThread={renameThread}
-        document={document}
-        uploading={uploading}
-        onUpload={upload}
-        sidebarOpen={sidebarOpen}
-        onCloseSidebar={() => setSidebarOpen(false)}
-        onOpenAuthModal={() => setAuthModalOpen(true)}
+        threads={threads} activeThreadId={threadId} onSelectThread={selectThread}
+        onNewChat={() => newChat()} onDeleteThread={deleteThread} onRenameThread={renameThread}
+        document={document} uploading={uploading} onUpload={upload} sidebarOpen={sidebarOpen}
+        onCloseSidebar={() => setSidebarOpen(false)} onOpenAuthModal={() => setAuthModalOpen(true)}
         onOpenDocumentHub={() => setDocumentHubOpen(true)}
       />
 
       <section className="relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden ambient-glow">
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-          onNewChat={() => newChat()}
-          activeTool={activeTool}
+          onNewChat={() => newChat()} activeTool={activeTool}
           onOpenAuthModal={() => setAuthModalOpen(true)}
           onOpenDocumentHub={() => setDocumentHubOpen(true)}
         />
