@@ -129,6 +129,13 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
             "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, timestamp);"
         )
 
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO users (id, email, hashed_password, salt, full_name, role)
+            VALUES ('guest', 'guest@agentpilot.local', 'disabled', 'disabled', 'Guest User', 'guest')
+            """
+        )
+
         conn.commit()
 
 
@@ -292,6 +299,19 @@ def revoke_all_user_refresh_tokens(user_id: str, db_path: Optional[str] = None) 
         conn.commit()
 
 
+def _ensure_user_exists(cursor: Any, user_id: str) -> None:
+    """Ensure a user record exists to avoid foreign key integrity errors."""
+    cursor.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
+    if not cursor.fetchone():
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO users (id, email, hashed_password, salt, full_name, role)
+            VALUES (?, ?, 'disabled', 'disabled', ?, ?)
+            """,
+            (user_id, f"{user_id}@agentpilot.local", f"User {user_id}", "user" if user_id != "guest" else "guest"),
+        )
+
+
 def save_document_record(
     doc_id: str,
     user_id: str,
@@ -308,6 +328,7 @@ def save_document_record(
     """Store or update document metadata record in documents table."""
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
+        _ensure_user_exists(cursor, user_id)
         cursor.execute(
             """
             INSERT INTO documents (
@@ -411,6 +432,7 @@ def attach_document_to_thread(
             return False
 
         # Upsert thread with active_document_id
+        _ensure_user_exists(cursor, user_id)
         cursor.execute(
             """
             INSERT INTO threads (id, user_id, active_document_id)

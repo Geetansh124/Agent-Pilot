@@ -245,6 +245,15 @@ class StorageBackend(ABC):
         rel_path = f"users/{sanitize_thread_id(user_id)}/documents/{sanitize_thread_id(doc_id)}/{filename}"
         return self.download_bytes("documents", user_id, rel_path)
 
+    def has_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+    ) -> bool:
+        """Check whether user document exists in storage."""
+        return False
+
     def delete_user_document(
         self,
         user_id: str,

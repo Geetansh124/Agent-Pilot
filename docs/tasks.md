@@ -106,12 +106,12 @@
 * **Assignee**: `tester`
 * **Objective**: Automated test asserting that User A cannot retrieve or query User B's documents or threads.
 * **Acceptance Criteria**:
-  - [ ] Test suite executes in CI/pytest.
-  - [ ] All cross-tenant requests fail safely.
+  - [x] Test suite executes in CI/pytest.
+  - [x] All cross-tenant requests fail safely.
 
 ### Task 5.2 — Security Envelope Audit & Swarm Review
 * **Assignee**: `reviewer`
 * **Objective**: Comprehensive code review for OWASP compliance, zero secrets, and file size constraints (< 500 lines).
 * **Acceptance Criteria**:
-  - [ ] Security audit passes with zero critical findings.
-  - [ ] All code files remain strictly under 500 lines.
+  - [x] Security audit passes with zero critical findings.
+  - [x] All code files remain strictly under 500 lines.

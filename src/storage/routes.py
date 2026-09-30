@@ -81,7 +81,7 @@ async def upload_document(
 
 @documents_router.post(
     "/threads/{thread_id}/document",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
     summary="Upload document attached to an active thread (frontend compatible)",
 )
 async def upload_thread_document(
@@ -104,7 +104,7 @@ async def _process_document_upload(
     lower_name = filename.lower()
     if not any(lower_name.endswith(ext) for ext in ALLOWED_EXTENSIONS):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=f"Unsupported file format for '{filename}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
         )
 

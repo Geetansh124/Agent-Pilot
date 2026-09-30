@@ -374,6 +374,18 @@ class LocalStorageBackend(StorageBackend):
             return target.read_bytes()
         return None
 
+    def has_user_document(
+        self,
+        user_id: str,
+        doc_id: str,
+        filename: str,
+    ) -> bool:
+        """Check whether user document exists under users/{user_id}/documents/{doc_id}/{filename}."""
+        clean_uid = sanitize_thread_id(user_id)
+        clean_did = sanitize_thread_id(doc_id)
+        target = self.base_dir / "users" / clean_uid / "documents" / clean_did / Path(filename).name
+        return target.exists() and target.is_file()
+
     def delete_user_document(
         self,
         user_id: str,
