@@ -29,6 +29,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const storedToken = localStorage.getItem("agent_pilot_token");
         const storedRefresh = localStorage.getItem("agent_pilot_refresh");
+        const storedUser = localStorage.getItem("agent_pilot_user");
+
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {
+            /* ignore */
+          }
+        }
 
         if (storedToken) {
           setAccessToken(storedToken);
@@ -39,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (meRes.ok) {
             const userData = await meRes.json();
             setUser(userData);
+            localStorage.setItem("agent_pilot_user", JSON.stringify(userData));
           } else if (storedRefresh) {
             // Attempt token refresh
             const refreshed = await attemptRefresh(storedRefresh);
@@ -78,7 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers: { Authorization: `Bearer ${data.access_token}` },
         });
         if (meRes.ok) {
-          setUser(await meRes.json());
+          const userData = await meRes.json();
+          setUser(userData);
+          localStorage.setItem("agent_pilot_user", JSON.stringify(userData));
           return true;
         }
       }
@@ -93,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(null);
     localStorage.removeItem("agent_pilot_token");
     localStorage.removeItem("agent_pilot_refresh");
+    localStorage.removeItem("agent_pilot_user");
   };
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
@@ -115,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setUser(data.user);
+      localStorage.setItem("agent_pilot_user", JSON.stringify(data.user));
       return { success: true };
     } catch (err) {
       return { success: false, error: "Network error connecting to authentication server." };
@@ -141,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setUser(data.user);
+      localStorage.setItem("agent_pilot_user", JSON.stringify(data.user));
       return { success: true };
     } catch (err) {
       return { success: false, error: "Network error registering user account." };
@@ -163,7 +178,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.refresh_token) {
         localStorage.setItem("agent_pilot_refresh", data.refresh_token);
       }
-      setUser(data.user);
+
+      let userData = data.user;
+      if (credential) {
+        try {
+          const parts = credential.split(".");
+          if (parts.length > 1) {
+            const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+            if (payload?.picture && (!userData?.avatar_url || userData.avatar_url !== payload.picture)) {
+              userData = { ...userData, avatar_url: payload.picture };
+            }
+          }
+        } catch {
+          // ignore JWT decode fallback
+        }
+      }
+
+      setUser(userData);
+      localStorage.setItem("agent_pilot_user", JSON.stringify(userData));
       return { success: true };
     } catch {
       return { success: false, error: "Network error during Google sign-in." };

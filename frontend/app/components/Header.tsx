@@ -89,9 +89,21 @@ export default function Header({
               className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-xs text-zinc-300"
               title={`Signed in as ${user.email}`}
             >
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600/30 text-indigo-300 text-[10px] font-bold">
-                {user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
-              </div>
+              {user.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user.full_name || "Profile"}
+                  referrerPolicy="no-referrer"
+                  className="h-5 w-5 rounded-full object-cover border border-white/10 shadow-sm"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600/30 text-indigo-300 text-[10px] font-bold">
+                  {user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+                </div>
+              )}
               <span className="hidden md:inline text-[11px] font-medium truncate max-w-[100px]">
                 {user.full_name?.split(" ")[0] || user.email.split("@")[0]}
               </span>

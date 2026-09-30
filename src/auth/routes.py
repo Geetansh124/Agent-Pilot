@@ -223,7 +223,7 @@ def google_auth(payload: GoogleAuthRequest) -> dict[str, Any]:
     import os
     from google.oauth2 import id_token
     from google.auth.transport import requests as google_requests
-    from src.auth.database import get_user_by_email, create_oauth_user
+    from src.auth.database import get_user_by_email, create_oauth_user, get_db_connection
 
     allowed_clients = [
         c.strip() for c in [
@@ -256,14 +256,29 @@ def google_auth(payload: GoogleAuthRequest) -> dict[str, Any]:
     if not email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No verified email returned from Google.")
 
+    picture = id_info.get("picture")
+    name = id_info.get("name")
+
     user = get_user_by_email(email)
     if not user:
         user = create_oauth_user(
             email=email,
-            full_name=id_info.get("name"),
-            avatar_url=id_info.get("picture"),
+            full_name=name,
+            avatar_url=picture,
             provider="google",
         )
+    else:
+        if picture or name:
+            with get_db_connection() as conn:
+                conn.execute(
+                    "UPDATE users SET avatar_url = COALESCE(?, avatar_url), full_name = COALESCE(?, full_name), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (picture, name, user["id"]),
+                )
+                conn.commit()
+            user = get_user_by_email(email)
+
+    if user and picture and not user.get("avatar_url"):
+        user["avatar_url"] = picture
 
     access_token = create_access_token({"sub": user["id"], "email": user["email"], "role": user["role"]})
     raw_refresh_token, hashed_refresh, expires_at = create_refresh_token()

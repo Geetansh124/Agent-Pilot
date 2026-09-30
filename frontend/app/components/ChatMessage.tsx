@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { User, Copy, Check } from "lucide-react";
 import { Message } from "./types";
+import { useAuth } from "../context/AuthContext";
 
 interface ChatMessageProps {
   message: Message;
@@ -66,6 +67,7 @@ export default function ChatMessage({
   isLastAssistant,
   streaming,
 }: ChatMessageProps) {
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
 
@@ -184,9 +186,21 @@ export default function ChatMessage({
 
       {isUser && (
         <div className="shrink-0 mt-0.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800 border border-white/10 text-zinc-300 shadow-sm">
-            <User size={14} />
-          </div>
+          {user?.avatar_url ? (
+            <img
+              src={user.avatar_url}
+              alt={user.full_name || user.email || "You"}
+              referrerPolicy="no-referrer"
+              className="h-7 w-7 rounded-lg object-cover border border-white/10 shadow-sm"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-800 border border-white/10 text-zinc-300 shadow-sm font-semibold text-xs">
+              {user?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || <User size={14} />}
+            </div>
+          )}
         </div>
       )}
     </div>

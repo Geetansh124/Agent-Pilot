@@ -250,8 +250,20 @@ export default function Sidebar({
         {user ? (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 shrink-0">
-                {user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+              <div className="relative flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden bg-indigo-600/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 shrink-0">
+                {user.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt={user.full_name || user.email}
+                    referrerPolicy="no-referrer"
+                    className="h-full w-full object-cover rounded-lg"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <span>{user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}</span>
+                )}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
