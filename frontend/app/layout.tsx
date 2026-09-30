@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { AuthProvider } from "./context/AuthContext";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +30,9 @@ export default function RootLayout({
         <link rel="icon" href="/logo.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/logo.jpg" />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

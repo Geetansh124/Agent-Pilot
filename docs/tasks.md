@@ -81,22 +81,22 @@
 * **Assignee**: `coder`
 * **Objective**: Create `AuthContext` in Next.js managing user state, tokens in memory/cookie, and automatic refresh.
 * **Acceptance Criteria**:
-  - [ ] State reflects authenticated vs guest.
-  - [ ] Requests automatically attach `Authorization: Bearer <token>`.
+  - [x] State reflects authenticated vs guest.
+  - [x] Requests automatically attach `Authorization: Bearer <token>`.
 
 ### Task 4.2 — Auth Modal Component (Sign In / Register)
 * **Assignee**: `coder`
 * **Objective**: Build glassmorphic login modal following `docs/design.md`.
 * **Acceptance Criteria**:
-  - [ ] Smooth switching between Sign In and Create Account tabs.
-  - [ ] Field validation for email format and password length.
+  - [x] Smooth switching between Sign In and Create Account tabs.
+  - [x] Field validation for email format and password length.
 
 ### Task 4.3 — Knowledge Base Document Hub Modal
 * **Assignee**: `coder`
 * **Objective**: Build Document Cloud Hub modal displaying user's persistent Google Drive documents with "Attach to Chat" action.
 * **Acceptance Criteria**:
-  - [ ] Shows file list with Google Drive synced status badge.
-  - [ ] Clicking "Attach" links the document to the current conversation.
+  - [x] Shows file list with Google Drive synced status badge.
+  - [x] Clicking "Attach" links the document to the current conversation.
 
 ---
 

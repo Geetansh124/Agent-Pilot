@@ -10,8 +10,14 @@ import {
   Trash2,
   X,
   Sparkles,
+  Cloud,
+  FolderKanban,
+  LogIn,
+  LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { Thread } from "./types";
+import { useAuth } from "../context/AuthContext";
 
 interface SidebarProps {
   threads: Thread[];
@@ -25,6 +31,8 @@ interface SidebarProps {
   onUpload: (file: File) => void;
   sidebarOpen: boolean;
   onCloseSidebar: () => void;
+  onOpenAuthModal?: () => void;
+  onOpenDocumentHub?: () => void;
 }
 
 export default function Sidebar({
@@ -39,7 +47,10 @@ export default function Sidebar({
   onUpload,
   sidebarOpen,
   onCloseSidebar,
+  onOpenAuthModal,
+  onOpenDocumentHub,
 }: SidebarProps) {
+  const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -105,26 +116,43 @@ export default function Sidebar({
         </div>
 
         {/* Knowledge Base */}
-        <div className="mt-3.5">
-          <div className="flex items-center justify-between text-[11px] font-medium text-zinc-400 mb-1.5 px-0.5">
+        <div className="mt-3.5 space-y-1.5">
+          <div className="flex items-center justify-between text-[11px] font-medium text-zinc-400 px-0.5">
             <span>Knowledge Base</span>
-            {document && (
-              <span className="text-[10px] text-indigo-300 font-mono px-1.5 py-0.2 rounded bg-indigo-500/10 border border-indigo-500/20">
-                {String(document.chunks || 0)} chunks
-              </span>
+            {onOpenDocumentHub && (
+              <button
+                type="button"
+                onClick={onOpenDocumentHub}
+                className="text-[10px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1 cursor-pointer"
+              >
+                <Cloud size={10} />
+                <span>Cloud Hub</span>
+              </button>
             )}
           </div>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5 text-xs text-zinc-300 hover:bg-white/[0.06] hover:border-white/15 transition disabled:opacity-50"
-          >
-            <Upload size={14} className={`text-indigo-400 ${uploading ? "animate-pulse" : ""}`} />
-            <span className="truncate">
-              {uploading ? "Indexing document…" : document ? String(document.filename) : "Upload Document"}
-            </span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2 text-xs text-zinc-300 hover:bg-white/[0.06] hover:border-white/15 transition disabled:opacity-50 min-w-0 cursor-pointer"
+            >
+              <Upload size={13} className={`text-indigo-400 shrink-0 ${uploading ? "animate-pulse" : ""}`} />
+              <span className="truncate">
+                {uploading ? "Indexing…" : document ? String(document.filename) : "Upload File"}
+              </span>
+            </button>
+            {onOpenDocumentHub && (
+              <button
+                type="button"
+                onClick={onOpenDocumentHub}
+                title="Open Document Cloud Hub"
+                className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-2 text-zinc-400 hover:text-white hover:bg-white/[0.06] hover:border-white/15 transition shrink-0 cursor-pointer"
+              >
+                <FolderKanban size={13} />
+              </button>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -215,6 +243,46 @@ export default function Sidebar({
             })
           )}
         </div>
+      </div>
+
+      {/* User Profile / Auth Footer */}
+      <div className="shrink-0 p-3 border-t border-white/[0.06] bg-black/20">
+        {user ? (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/30 text-indigo-300 font-semibold text-xs border border-indigo-500/30 shrink-0">
+                {user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate text-xs font-medium text-zinc-200">
+                    {user.full_name || user.email.split("@")[0]}
+                  </p>
+                  <span className="rounded bg-indigo-500/10 px-1 py-0.2 text-[9px] font-mono text-indigo-400 border border-indigo-500/20">
+                    {user.role === "admin" ? "ADMIN" : "PRO"}
+                  </span>
+                </div>
+                <p className="truncate text-[10px] text-zinc-500">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="rounded-lg p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.08] transition shrink-0 cursor-pointer"
+            >
+              <LogOut size={13} />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenAuthModal}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 py-2 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200 transition shadow-sm cursor-pointer"
+          >
+            <LogIn size={13} />
+            <span>Sign In / Workspace</span>
+          </button>
+        )}
       </div>
     </aside>
   );

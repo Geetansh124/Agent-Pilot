@@ -11,11 +11,15 @@ import {
   BarChart3,
   FileText,
   X,
+  Cloud,
 } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import ChatMessage from "./components/ChatMessage";
-import { Message, Thread } from "./components/types";
+import AuthModal from "./components/AuthModal";
+import DocumentHubModal from "./components/DocumentHubModal";
+import { Message, Thread, StoredDocument } from "./components/types";
+import { useAuth } from "./context/AuthContext";
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
@@ -37,6 +41,7 @@ const QUICK_CHIPS = [
 ];
 
 export default function Home() {
+  const { user, authFetch, isAuthenticated } = useAuth();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [threadId, setThreadId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -47,15 +52,17 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [documentHubOpen, setDocumentHubOpen] = useState(false);
 
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     void loadThreads();
     return () => abortRef.current?.abort();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -65,16 +72,14 @@ export default function Home() {
 
   async function loadThreads() {
     try {
-      const response = await fetch(`${API}/api/threads`);
+      const response = await authFetch(`${API}/api/threads`);
       if (!response.ok) return;
       const data = await response.json();
       if (Array.isArray(data)) {
         setThreads(data);
         if (!threadId) newChat(data);
       }
-    } catch {
-      /* server waking up */
-    }
+    } catch { /* server starting */ }
   }
 
   function resetChat(id: string, msgs: Message[] = []) {
@@ -93,17 +98,24 @@ export default function Home() {
     if (Array.isArray(existing)) setThreads(existing);
   }
 
-  function selectThread(thread: Thread) {
+  async function selectThread(thread: Thread) {
     resetChat(thread.id || safeUUID(), Array.isArray(thread.messages) ? thread.messages : []);
+    if (thread.id) {
+      try {
+        const res = await authFetch(`${API}/api/threads/${thread.id}/document`);
+        if (res.ok) {
+          const data = await res.json();
+          setDocument(data.attached ? data.document : null);
+        }
+      } catch { /* best-effort */ }
+    }
   }
 
   async function deleteThread(id: string) {
     try {
-      await fetch(`${API}/api/threads/${id}`, { method: "DELETE" });
-    } catch {
-      /* best-effort */
-    }
-    setThreads((current) => (Array.isArray(current) ? current.filter((t) => t && t.id !== id) : []));
+      await authFetch(`${API}/api/threads/${id}`, { method: "DELETE" });
+    } catch { /* best-effort */ }
+    setThreads((cur) => (Array.isArray(cur) ? cur.filter((t) => t && t.id !== id) : []));
     if (threadId === id) newChat();
   }
 
@@ -111,18 +123,14 @@ export default function Home() {
     const trimmed = newTitle.trim();
     if (!trimmed) return;
     try {
-      await fetch(`${API}/api/threads/${id}`, {
+      await authFetch(`${API}/api/threads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: trimmed }),
       });
-    } catch {
-      /* best-effort */
-    }
-    setThreads((current) =>
-      Array.isArray(current)
-        ? current.map((t) => (t && t.id === id ? { ...t, title: trimmed } : t))
-        : []
+    } catch { /* best-effort */ }
+    setThreads((cur) =>
+      Array.isArray(cur) ? cur.map((t) => (t && t.id === id ? { ...t, title: trimmed } : t)) : []
     );
   }
 
@@ -134,67 +142,56 @@ export default function Home() {
     if (!text || busy) return;
 
     setInput("");
-    setMessages((current) => [...current, { role: "user", content: text }]);
+    setMessages((cur) => [...cur, { role: "user", content: text }]);
     setBusy(true);
     setStreaming(true);
     setActiveTool(null);
-
-    // Empty assistant bubble to fill via SSE
-    setMessages((current) => [...current, { role: "assistant", content: "" }]);
+    setMessages((cur) => [...cur, { role: "assistant", content: "" }]);
 
     const controller = new AbortController();
     abortRef.current = controller;
     const timeout = setTimeout(() => controller.abort(), 120_000);
 
     try {
-      const response = await fetch(`${API}/api/chat/stream`, {
+      const response = await authFetch(`${API}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, thread_id: threadId }),
         signal: controller.signal,
       });
-      clearTimeout(timeout);
 
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error((data as { detail?: string }).detail || "Request failed");
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `Server responded with ${response.status}`);
       }
 
-      const reader = response.body!.getReader();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body.");
+
       const decoder = new TextDecoder();
       let buffer = "";
 
-      // eslint-disable-next-line no-constant-condition
       while (true) {
-        const { done, value } = await reader.read();
+        const { value, done } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
+        const lines = buffer.split("\n\n");
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-
-          let payload: {
-            type: string;
-            content?: string;
-            name?: string;
-            message?: string;
-          };
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          let payload: { type?: string; content?: string; name?: string; message?: string };
           try {
-            payload = JSON.parse(line.slice(6));
-          } catch {
-            continue;
-          }
+            payload = JSON.parse(trimmed.slice(5).trim());
+          } catch { continue; }
 
           if (payload.type === "token" && payload.content) {
-            const fragment = payload.content;
             setMessages((cur) => {
               const next = [...cur];
               const last = next[next.length - 1];
-              if (last?.role === "assistant") {
-                next[next.length - 1] = { role: "assistant", content: last.content + fragment };
+              if (last && last.role === "assistant") {
+                next[next.length - 1] = { ...last, content: last.content + payload.content };
               }
               return next;
             });
@@ -213,24 +210,14 @@ export default function Home() {
         ...(Array.isArray(cur) ? cur.filter((t) => t && t.id !== threadId) : []),
       ]);
     } catch (error) {
-      const msg =
-        error instanceof DOMException && error.name === "AbortError"
-          ? "Request timed out. The agent is still processing — please try again."
-          : error instanceof Error
-          ? error.message
-          : "Something went wrong.";
-      const errorContent =
-        msg.includes("Failed to fetch") || msg.includes("NetworkError")
-          ? "Server is starting..."
-          : msg;
-
+      const msg = error instanceof Error ? error.message : "Something went wrong.";
       setMessages((cur) => {
         const next = [...cur];
         const last = next[next.length - 1];
         if (last?.role === "assistant" && !last.content) {
-          next[next.length - 1] = { role: "assistant", content: errorContent };
+          next[next.length - 1] = { role: "assistant", content: msg };
         } else {
-          next.push({ role: "assistant", content: errorContent });
+          next.push({ role: "assistant", content: msg });
         }
         return next;
       });
@@ -243,58 +230,32 @@ export default function Home() {
     }
   }
 
-  function stopStreaming() {
-    abortRef.current?.abort();
-  }
-
-  // ----------------------------- upload ----------------------------------
-
   async function upload(file?: File) {
     if (!file) return;
-    const allowed = [".pdf", ".docx", ".doc", ".txt", ".md", ".markdown", ".csv", ".json"];
-    const isSupported = allowed.some((ext) => file.name.toLowerCase().endsWith(ext));
-    if (!isSupported) {
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: "Please upload a supported file (.pdf, .docx, .txt, .md, .csv)." },
-      ]);
-      return;
-    }
-
-    let activeThreadId = threadId;
-    if (!activeThreadId) {
-      activeThreadId = safeUUID();
-      setThreadId(activeThreadId);
-    }
+    let activeThreadId = threadId || safeUUID();
+    if (!threadId) setThreadId(activeThreadId);
 
     setUploading(true);
     try {
       const body = new FormData();
       body.append("file", file, file.name);
-      const response = await fetch(`${API}/api/threads/${activeThreadId}/document`, {
-        method: "POST",
-        body,
-      });
+      body.append("thread_id", activeThreadId);
+
+      const response = await authFetch(`${API}/api/documents/upload`, { method: "POST", body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Upload failed");
+
       setDocument(data);
-      setMessages((current) => [
-        ...current,
+      setMessages((cur) => [
+        ...cur,
         {
           role: "assistant",
-          content: `📄 **${data.filename || file.name}** indexed successfully (${data.chunks || 0} chunks, ${data.documents || 1} pages).\n\nYou can now ask questions about this document!`,
+          content: `📄 **${data.filename || file.name}** indexed & synced to Google Drive (${data.chunks || 0} chunks).\n\nYou can now ask grounded questions citing this document!`,
         },
       ]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Upload failed.";
-      const errorContent =
-        msg.includes("Failed to fetch") || msg.includes("NetworkError")
-          ? "Server is starting..."
-          : `Upload error: ${msg}`;
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: errorContent },
-      ]);
+      setMessages((cur) => [...cur, { role: "assistant", content: `Upload error: ${msg}` }]);
     } finally {
       setUploading(false);
     }
@@ -302,7 +263,6 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-full overflow-hidden bg-[#09090b] text-zinc-100">
-      {/* Sidebar */}
       <Sidebar
         threads={threads}
         activeThreadId={threadId}
@@ -315,17 +275,19 @@ export default function Home() {
         onUpload={upload}
         sidebarOpen={sidebarOpen}
         onCloseSidebar={() => setSidebarOpen(false)}
+        onOpenAuthModal={() => setAuthModalOpen(true)}
+        onOpenDocumentHub={() => setDocumentHubOpen(true)}
       />
 
-      {/* Main Chat Workspace */}
       <section className="relative flex h-screen min-w-0 flex-1 flex-col overflow-hidden ambient-glow">
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           onNewChat={() => newChat()}
           activeTool={activeTool}
+          onOpenAuthModal={() => setAuthModalOpen(true)}
+          onOpenDocumentHub={() => setDocumentHubOpen(true)}
         />
 
-        {/* Messages container */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
           <div className="mx-auto flex w-full max-w-3xl flex-col min-h-full justify-between">
             {messages.length === 0 ? (
@@ -346,7 +308,6 @@ export default function Home() {
                   Autonomous workspace for deep web research, code execution, and document intelligence.
                 </p>
 
-                {/* Quick Capability Chips */}
                 <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl">
                   {QUICK_CHIPS.map((chip, idx) => {
                     const Icon = chip.icon;
@@ -375,7 +336,6 @@ export default function Home() {
                   />
                 ))}
 
-                {/* Active Tool Indicator */}
                 {activeTool && (
                   <div className="flex items-center gap-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-2 text-xs text-indigo-200 w-fit backdrop-blur-md shadow-md animate-pulse">
                     <Loader2 size={13} className="animate-spin text-indigo-400" />
@@ -386,7 +346,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Thinking Indicator */}
                 {busy && !streaming && !activeTool && (
                   <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2 text-xs text-zinc-400 w-fit backdrop-blur-md shadow-sm">
                     <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping" />
@@ -399,7 +358,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Input Bar */}
         <div className="shrink-0 px-4 sm:px-6 py-3.5">
           <form
             onSubmit={send}
@@ -411,32 +369,54 @@ export default function Home() {
                   <FileText size={13} className="text-indigo-400 shrink-0" />
                   <span className="font-medium text-zinc-200 truncate">{String(document.filename || "Attached document")}</span>
                   <span className="text-[10px] text-zinc-500 shrink-0">({String(document.chunks || 0)} chunks)</span>
+                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20">
+                    G-Drive
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDocument(null)}
-                  className="text-zinc-500 hover:text-zinc-200 p-0.5 rounded transition ml-2"
-                  title="Detach document"
-                >
-                  <X size={12} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDocumentHubOpen(true)}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 transition"
+                  >
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocument(null)}
+                    className="text-zinc-500 hover:text-zinc-200 p-0.5 rounded transition"
+                    title="Detach document"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
               </div>
             )}
 
             <div className="flex items-end gap-2 p-2.5">
               <button
                 type="button"
+                onClick={() => setDocumentHubOpen(true)}
+                disabled={uploading}
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition disabled:opacity-50 cursor-pointer"
+                title="Open Google Drive Document Hub"
+              >
+                <Cloud size={15} className="text-indigo-400" />
+              </button>
+
+              <button
+                type="button"
                 onClick={() => chatFileInputRef.current?.click()}
                 disabled={uploading}
-                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition disabled:opacity-50"
-                title="Attach document (.pdf, .docx, .csv, .txt)"
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition disabled:opacity-50 cursor-pointer"
+                title="Direct Upload (.pdf, .docx, .csv, .txt)"
               >
                 <Upload size={15} className={uploading ? "animate-pulse text-indigo-400" : ""} />
               </button>
               <input
                 ref={chatFileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,application/pdf"
+                accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.json"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -456,14 +436,14 @@ export default function Home() {
                 }}
                 rows={1}
                 disabled={busy}
-                placeholder={uploading ? "Indexing attached document..." : "Ask anything, run code, scrape URLs, or query documents..."}
+                placeholder={uploading ? "Indexing & syncing document to Google Drive..." : "Ask anything, run code, scrape URLs, or query documents..."}
                 className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none max-h-32 leading-relaxed"
               />
 
               {streaming ? (
                 <button
                   type="button"
-                  onClick={stopStreaming}
+                  onClick={() => abortRef.current?.abort()}
                   className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.1] transition active:scale-95"
                   title="Stop generation"
                 >
@@ -483,11 +463,23 @@ export default function Home() {
           </form>
 
           <div className="mx-auto mt-2 flex w-full max-w-3xl items-center justify-between text-[11px] text-zinc-500 px-2">
-            <span>Agent-Pilot 2.0</span>
+            <span>Agent-Pilot 2.0 · Multi-Tenant</span>
             <span>Enter to send · Shift+Enter for new line</span>
           </div>
         </div>
       </section>
+
+      {/* Auth Modal */}
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+
+      {/* Google Drive Document Cloud Hub Modal */}
+      <DocumentHubModal
+        isOpen={documentHubOpen}
+        onClose={() => setDocumentHubOpen(false)}
+        activeThreadId={threadId}
+        activeDocumentId={document?.id as string}
+        onDocumentAttached={(doc: StoredDocument) => setDocument(doc)}
+      />
     </main>
   );
 }

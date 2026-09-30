@@ -31,3 +31,26 @@ export type AgentSkill = {
   agentRole: AgentRole;
   badge?: string;
 };
+
+export type User = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+};
+
+export type StoredDocument = {
+  id: string;
+  doc_id?: string;
+  filename: string;
+  size_bytes: number;
+  mime_type?: string;
+  drive_file_id?: string;
+  drive_web_link?: string;
+  drive_folder_id?: string;
+  chunks_count?: number;
+  chunks?: number;
+  status: string;
+  created_at?: string;
+};
+
