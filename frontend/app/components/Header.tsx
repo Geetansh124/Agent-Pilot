@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Menu, Loader2, Plus, Cloud, LogIn } from "lucide-react";
+import { Menu, Loader2, Plus, Cloud, LogIn, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 interface HeaderProps {
@@ -19,7 +19,7 @@ export default function Header({
   onOpenDocumentHub,
   onOpenAuthModal,
 }: HeaderProps) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   return (
     <header className="shrink-0 flex items-center justify-between glass-nav px-4 py-2.5 z-20">
       {/* Left side: Navigation toggle and clean brand label */}
@@ -84,16 +84,26 @@ export default function Header({
         )}
 
         {user ? (
-          <div
-            className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-xs text-zinc-300"
-            title={`Signed in as ${user.email}`}
-          >
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600/30 text-indigo-300 text-[10px] font-bold">
-              {user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+          <div className="flex items-center gap-1.5">
+            <div
+              className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-xs text-zinc-300"
+              title={`Signed in as ${user.email}`}
+            >
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600/30 text-indigo-300 text-[10px] font-bold">
+                {user.full_name?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "U"}
+              </div>
+              <span className="hidden md:inline text-[11px] font-medium truncate max-w-[100px]">
+                {user.full_name?.split(" ")[0] || user.email.split("@")[0]}
+              </span>
             </div>
-            <span className="hidden md:inline text-[11px] font-medium truncate max-w-[100px]">
-              {user.full_name?.split(" ")[0] || user.email.split("@")[0]}
-            </span>
+            <button
+              type="button"
+              onClick={logout}
+              title="Sign Out"
+              className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06] transition active:scale-95 cursor-pointer"
+            >
+              <LogOut size={13} />
+            </button>
           </div>
         ) : (
           onOpenAuthModal && (

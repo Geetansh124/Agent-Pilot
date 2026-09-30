@@ -12,6 +12,7 @@ from src.auth.auth import (
 from src.auth.database import (
     authenticate_user,
     create_user,
+    create_oauth_user,
     get_user_by_email,
     get_user_by_id,
     init_auth_db,

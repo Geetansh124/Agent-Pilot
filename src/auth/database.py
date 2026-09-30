@@ -115,27 +115,19 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
         )
 
         # Indices for optimal query performance and tenant isolation
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id, created_at);"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id, created_at);"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_threads_user ON threads(user_id, created_at);"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, timestamp);"
-        )
+        for idx_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);",
+            "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id, created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id, created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_threads_user ON threads(user_id, created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, timestamp);",
+        ):
+            cursor.execute(idx_sql)
 
         cursor.execute(
-            """
-            INSERT OR IGNORE INTO users (id, email, hashed_password, salt, full_name, role)
-            VALUES ('guest', 'guest@agentpilot.local', 'disabled', 'disabled', 'Guest User', 'guest')
-            """
+            "INSERT OR IGNORE INTO users (id, email, hashed_password, salt, full_name, role) "
+            "VALUES ('guest', 'guest@agentpilot.local', 'disabled', 'disabled', 'Guest User', 'guest')"
         )
-
         conn.commit()
 
 
@@ -236,9 +228,30 @@ def get_user_by_email(email: str, db_path: Optional[str] = None) -> Optional[dic
             (clean_email,),
         )
         row = cursor.fetchone()
-        if not row:
-            return None
-        return dict(row)
+        return dict(row) if row else None
+
+
+def create_oauth_user(
+    email: str,
+    full_name: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+    provider: str = "google",
+    db_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """Create a new OAuth-authenticated user."""
+    clean_email = email.strip().lower()
+    user_id = str(uuid.uuid4())
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO users (id, email, hashed_password, salt, full_name, avatar_url, role)
+            VALUES (?, ?, ?, ?, ?, ?, 'user')
+            """,
+            (user_id, clean_email, f"oauth_{provider}", f"oauth_{provider}", full_name, avatar_url),
+        )
+        conn.commit()
+    return {"id": user_id, "email": clean_email, "full_name": full_name, "avatar_url": avatar_url, "role": "user"}
 
 
 def store_refresh_token(

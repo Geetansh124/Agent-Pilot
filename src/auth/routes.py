@@ -47,6 +47,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., min_length=1, max_length=256, description="Active refresh token")
 
 
+class GoogleAuthRequest(BaseModel):
+    credential: str = Field(..., min_length=1, description="Google OAuth2 ID token credential")
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -206,3 +210,56 @@ def logout(user_claims: dict[str, Any] = Depends(require_authenticated_user)) ->
     if user_id:
         revoke_all_user_refresh_tokens(user_id)
     return {"message": "Successfully logged out."}
+
+
+@auth_router.post(
+    "/google",
+    response_model=AuthResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Sign in or register using Google 1-Click OAuth ID token",
+)
+def google_auth(payload: GoogleAuthRequest) -> dict[str, Any]:
+    """Verify Google ID token, find or create user, and issue access tokens."""
+    import os
+    from google.oauth2 import id_token
+    from google.auth.transport import requests as google_requests
+    from src.auth.database import get_user_by_email, create_oauth_user
+
+    client_id = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("GOOGLE_DRIVE_CLIENT_ID")
+    try:
+        id_info = id_token.verify_oauth2_token(
+            payload.credential,
+            google_requests.Request(),
+            audience=client_id if client_id else None,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Google authentication failed: {exc}",
+        ) from exc
+
+    email = id_info.get("email")
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No verified email returned from Google.")
+
+    user = get_user_by_email(email)
+    if not user:
+        user = create_oauth_user(
+            email=email,
+            full_name=id_info.get("name"),
+            avatar_url=id_info.get("picture"),
+            provider="google",
+        )
+
+    access_token = create_access_token({"sub": user["id"], "email": user["email"], "role": user["role"]})
+    raw_refresh_token, hashed_refresh, expires_at = create_refresh_token()
+    store_refresh_token(user_id=user["id"], token_hash=hashed_refresh, expires_at=expires_at)
+
+    return {
+        "user": user,
+        "access_token": access_token,
+        "refresh_token": raw_refresh_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRY,
+    }
+

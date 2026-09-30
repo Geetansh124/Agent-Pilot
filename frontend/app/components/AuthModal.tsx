@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Eye, EyeOff, Loader2, Lock, Mail, User as UserIcon, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -11,7 +11,7 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: AuthModalProps) {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const [mode, setMode] = useState<"signin" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,6 +19,52 @@ export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: A
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!googleClientId || !isOpen) return;
+
+    const initGoogle = () => {
+      const g = (window as unknown as { google?: { accounts?: { id?: { initialize: (c: unknown) => void; renderButton: (el: HTMLElement, opts: unknown) => void } } } }).google;
+      if (g?.accounts?.id) {
+        g.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (resp: { credential?: string }) => {
+            if (resp.credential) {
+              setLoading(true);
+              setError(null);
+              const res = await loginWithGoogle(resp.credential);
+              setLoading(false);
+              if (res.success) onClose();
+              else setError(res.error || "Google sign-in failed.");
+            }
+          },
+        });
+        const container = document.getElementById("google-signin-btn");
+        if (container) {
+          g.accounts.id.renderButton(container, {
+            theme: "filled_black",
+            size: "large",
+            width: 340,
+            shape: "pill",
+            text: mode === "signin" ? "signin_with" : "signup_with",
+          });
+        }
+      }
+    };
+
+    if (!document.getElementById("google-gsi-script")) {
+      const script = document.createElement("script");
+      script.id = "google-gsi-script";
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogle;
+      document.body.appendChild(script);
+    } else {
+      initGoogle();
+    }
+  }, [isOpen, mode]);
 
   if (!isOpen) return null;
 
@@ -132,15 +178,26 @@ export default function AuthModal({ isOpen, onClose, initialMode = "signin" }: A
           </button>
         </div>
 
+        {/* Google 1-Click Sign-In (Rendered when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set) */}
+        <div className="mt-4 flex flex-col items-center">
+          <div id="google-signin-btn" className="flex justify-center w-full min-h-[40px]" />
+          <div className="relative my-3 flex items-center justify-center w-full">
+            <div className="w-full border-t border-white/[0.08]" />
+            <span className="absolute bg-zinc-950 px-2 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+              or continue with email
+            </span>
+          </div>
+        </div>
+
         {/* Error message banner */}
         {error && (
-          <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-300">
+          <div className="mt-1 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-300">
             {error}
           </div>
         )}
 
         {/* Auth Form */}
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {mode === "register" && (
             <div>
               <label className="block text-[11px] font-medium text-zinc-300 mb-1.5">

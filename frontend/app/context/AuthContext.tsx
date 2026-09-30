@@ -10,6 +10,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (email: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (credential: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   authFetch: (url: string, options?: RequestInit) => Promise<Response>;
 }
@@ -147,6 +148,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (credential: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`${API}/api/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.detail || "Google sign-in failed." };
+      }
+      setAccessToken(data.access_token);
+      localStorage.setItem("agent_pilot_token", data.access_token);
+      if (data.refresh_token) {
+        localStorage.setItem("agent_pilot_refresh", data.refresh_token);
+      }
+      setUser(data.user);
+      return { success: true };
+    } catch {
+      return { success: false, error: "Network error during Google sign-in." };
+    }
+  };
+
   const logout = async (): Promise<void> => {
     const token = accessToken || localStorage.getItem("agent_pilot_token");
     if (token) {
@@ -205,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         register,
+        loginWithGoogle,
         logout,
         authFetch,
       }}
