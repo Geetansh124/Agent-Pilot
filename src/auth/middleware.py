@@ -33,3 +33,11 @@ def require_role(user: dict[str, Any], allowed_roles: tuple[str, ...]) -> None:
     role = user.get("role", "guest")
     if role not in allowed_roles:
         raise HTTPException(status_code=403, detail=f"Access denied for role '{role}'. Required: {allowed_roles}")
+
+
+def require_authenticated_user(request: Request) -> dict[str, Any]:
+    """Dependency for strictly protected routes requiring a valid authenticated JWT."""
+    user = get_current_user(request)
+    if not user.get("is_authenticated") or user.get("sub") == "guest":
+        raise HTTPException(status_code=401, detail="Authentication credentials were not provided or are invalid.")
+    return user

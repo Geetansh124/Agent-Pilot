@@ -24,7 +24,7 @@ from langraph_rag_backend import (
     thread_document_metadata,
 )
 from src.rag import multi_doc_manager
-from src.auth import create_access_token, decode_and_verify_token, get_current_user
+from src.auth import auth_router, create_access_token, decode_and_verify_token, get_current_user, init_auth_db
 from src.security import sanitize_output, validate_input_prompt
 from src.agent import hitl_manager
 from src.observability import audit_logger, cost_tracker, estimate_token_count
@@ -45,6 +45,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 # ---------------------------------------------------------------------------
 # Rate Limiting
@@ -124,6 +125,10 @@ def startup_storage_restore() -> None:
             storage.restore_memory("memory.db")
     except Exception as exc:
         logger.warning("Startup storage restore encountered warning: %s", exc)
+    try:
+        init_auth_db("chatbot.db")
+    except Exception as exc:
+        logger.warning("Startup auth DB initialization encountered warning: %s", exc)
 
 
 @app.on_event("shutdown")

@@ -17,24 +17,24 @@
 * **Assignee**: `system-architect`
 * **Objective**: Create `users`, `refresh_tokens`, and add `user_id` foreign keys to `threads`, `documents`, and `messages` in `chatbot.db`.
 * **Acceptance Criteria**:
-  - [ ] Migration runs idempotently on startup.
-  - [ ] Foreign keys cascade on user deletion.
-  - [ ] Indices created on `(user_id, created_at)`.
+  - [x] Migration runs idempotently on startup.
+  - [x] Foreign keys cascade on user deletion.
+  - [x] Indices created on `(user_id, created_at)`.
 
 ### Task 1.2 — Authentication Service & Password Hashing
 * **Assignee**: `coder`
 * **Objective**: Implement password hashing (`passlib[bcrypt]`), JWT encoding/decoding, and token generation utilities in backend.
 * **Acceptance Criteria**:
-  - [ ] Secure token expiry (15m access, 7d refresh).
-  - [ ] `get_current_user` FastAPI dependency extracts and verifies JWT.
+  - [x] Secure token expiry (15m access, 7d refresh).
+  - [x] `get_current_user` FastAPI dependency extracts and verifies JWT.
 
 ### Task 1.3 — Auth REST API Endpoints
 * **Assignee**: `coder`
 * **Objective**: Expose `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, and `/api/auth/me`.
 * **Acceptance Criteria**:
-  - [ ] Duplicate email registration returns HTTP 409.
-  - [ ] Invalid credentials return HTTP 401.
-  - [ ] Protected endpoints reject missing/invalid tokens.
+  - [x] Duplicate email registration returns HTTP 409.
+  - [x] Invalid credentials return HTTP 401.
+  - [x] Protected endpoints reject missing/invalid tokens.
 
 ---
 

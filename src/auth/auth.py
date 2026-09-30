@@ -10,12 +10,16 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "docupilot-secret-insecure-key-change-in-prod-2026")
 ALGORITHM = "HS256"
-DEFAULT_EXPIRY_SECONDS = 3600 * 24  # 24 hours
+ACCESS_TOKEN_EXPIRY = int(os.getenv("ACCESS_TOKEN_EXPIRY_SECONDS", "900"))  # 15 minutes default
+REFRESH_TOKEN_EXPIRY = int(os.getenv("REFRESH_TOKEN_EXPIRY_SECONDS", str(3600 * 24 * 7)))  # 7 days
+DEFAULT_EXPIRY_SECONDS = ACCESS_TOKEN_EXPIRY
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -90,3 +94,16 @@ def decode_and_verify_token(token: str) -> dict[str, Any]:
         raise ValueError("Token has expired.")
 
     return payload
+
+
+def hash_token(token: str) -> str:
+    """Compute deterministic SHA-256 hash of a token for secure database storage."""
+    return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
+
+
+def create_refresh_token(expires_in: int = REFRESH_TOKEN_EXPIRY) -> tuple[str, str, str]:
+    """Generate high-entropy refresh token, returning (raw_token, token_hash, expires_at_iso)."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_token(raw_token)
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+    return raw_token, token_hash, expires_at
