@@ -33,17 +33,30 @@ This guide provides end-to-end instructions for deploying Agent-Pilot with a **F
 | `GOOGLE_DRIVE_CLIENT_SECRET` | OAuth Client Secret | Client secret string | When using OAuth |
 | `GOOGLE_DRIVE_REFRESH_TOKEN` | Long-lived OAuth refresh token | Refresh token string | When using OAuth |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON (alternative to OAuth) | Base64 or JSON string | Alternative |
+| `GOOGLE_CLIENT_ID` | Google OAuth Client ID for 1-click token verification | `...apps.googleusercontent.com` | Optional (Free) |
 
 ### Frontend Configuration (Vercel Project Settings → Environment Variables)
 
 | Variable | Description | Value | Required |
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | Public endpoint of the backend API | `https://agent-pilot-api.onrender.com` | ✅ Yes |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google Web OAuth Client ID for 1-Click Sign-In | `...apps.googleusercontent.com` | Optional (Free) |
 
 > **Note for Local Development:** In `frontend/.env.local`, set:
 > ```env
 > NEXT_PUBLIC_API_URL=http://localhost:8000
+> NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 > ```
+
+---
+
+## 2.1 Zero-Cost Authentication & Mandatory Auth Gate
+
+Agent-Pilot includes a **100% Zero-Cost Self-Hosted Authentication Architecture**:
+* **Native JWT + Bcrypt + SQLite**: Runs natively on the FastAPI backend without requiring any paid subscriptions (no Clerk, Auth0, or Supabase charges).
+* **Optional Google 1-Click Sign-In**: Free via Google Cloud Console OAuth 2.0 (Web client type).
+* **Mandatory Entry Gate**: Users who are not signed in cannot access the website, workspace, chat, or documents. They are presented with an interactive, secure Auth Gate modal to sign in or create an account.
+* **Persistent Sessions**: Access tokens and refresh tokens are stored in browser localStorage and automatically refreshed when expired. Logging out locks the gate immediately.
 
 ---
 
