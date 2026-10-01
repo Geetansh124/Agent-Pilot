@@ -10,6 +10,9 @@ import Header from "./components/Header";
 import ChatMessage from "./components/ChatMessage";
 import AuthModal from "./components/AuthModal";
 import DocumentHubModal from "./components/DocumentHubModal";
+import HeroMotionDeck from "./components/HeroMotionDeck";
+import MotionThinkingBadge from "./components/MotionThinkingBadge";
+import { motion, AnimatePresence } from "framer-motion";
 import { Message, Thread, StoredDocument, getApiBaseUrl } from "./components/types";
 import { useAuth } from "./context/AuthContext";
 
@@ -17,13 +20,6 @@ function safeUUID(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => ((Math.random() * 16) | (c === "x" ? 0 : 0x8)).toString(16));
 }
-
-const QUICK_CHIPS = [
-  { label: "Deep Web Research", icon: Globe, iconClass: "text-sky-400", prompt: "Fetch and summarize the latest updates from https://news.ycombinator.com" },
-  { label: "Python Sandbox", icon: Code2, iconClass: "text-emerald-400", prompt: "Run Python to calculate compound interest on $25,000 at 8% annual return over 15 years." },
-  { label: "Tabular Data Profiling", icon: BarChart3, iconClass: "text-amber-400", prompt: "Analyze this dataset structure: Month,Signups,Churn,Revenue\nJan,1200,45,24000\nFeb,1500,50,30000\nMar,1850,52,37000" },
-  { label: "Document Vector Search", icon: FileText, iconClass: "text-indigo-400", prompt: "What are the primary conclusions, metrics, and risks highlighted in my uploaded document?" },
-];
 
 export default function Home() {
   const { user, authFetch, isAuthenticated, isLoading } = useAuth();
@@ -54,7 +50,7 @@ export default function Home() {
   // Keep-alive ping: prevents Render free-tier spin-down during active sessions
   useEffect(() => {
     const KEEP_ALIVE_MS = 10 * 60 * 1000;
-    const ping = () => { fetch(`${API}/health`).catch(() => {}); };
+    const ping = () => { fetch(`${API}/health`).catch(() => { }); };
     ping();
     const interval = setInterval(ping, KEEP_ALIVE_MS);
     return () => clearInterval(interval);
@@ -275,7 +271,7 @@ export default function Home() {
       <div className="relative flex h-screen w-screen items-center justify-center bg-zinc-950 text-white overflow-hidden">
         <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-indigo-600/15 blur-[140px] rounded-full" />
         <div className="pointer-events-none absolute -bottom-40 right-10 w-[500px] h-[400px] bg-purple-600/10 blur-[130px] rounded-full" />
-        <AuthModal isOpen={true} isMandatory={true} onClose={() => {}} />
+        <AuthModal isOpen={true} isMandatory={true} onClose={() => { }} />
       </div>
     );
   }
@@ -301,66 +297,32 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
           <div className="mx-auto flex w-full max-w-3xl flex-col min-h-full justify-between">
             {messages.length === 0 ? (
-              <div className="my-auto flex flex-col items-center justify-center text-center py-12">
-                <div className="relative mb-4 group">
-                  <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-indigo-500/20 to-sky-500/20 blur-xl opacity-70 group-hover:opacity-100 transition duration-500" />
-                  <img
-                    src="/logo.jpg"
-                    alt="Agent-Pilot Logo"
-                    className="relative h-16 w-16 rounded-2xl border border-white/10 shadow-2xl object-cover ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-105"
-                  />
-                </div>
-
-                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
-                  Where will we explore today?
-                </h1>
-                <p className="mt-2 max-w-md text-xs sm:text-sm text-zinc-400 leading-relaxed">
-                  Autonomous workspace for deep web research, code execution, and document intelligence.
-                </p>
-
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl">
-                  {QUICK_CHIPS.map((chip, idx) => {
-                    const Icon = chip.icon;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setInput(chip.prompt)}
-                        className="group flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 transition-all duration-150 active:scale-95 shadow-sm"
-                      >
-                        <Icon size={13} className={chip.iconClass} />
-                        <span>{chip.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <HeroMotionDeck onSelectPrompt={(prompt) => setInput(prompt)} />
             ) : (
               <div className="space-y-4">
-                {messages.map((message, index) => (
-                  <ChatMessage
-                    key={index}
-                    message={message}
-                    isLastAssistant={message.role === "assistant" && index === messages.length - 1}
-                    streaming={streaming}
+                <AnimatePresence initial={false}>
+                  {messages.map((message, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ChatMessage
+                        message={message}
+                        isLastAssistant={message.role === "assistant" && index === messages.length - 1}
+                        streaming={streaming}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
+                {/* Motion.dev Thinking & Tool Execution Badge */}
+                {(activeTool || (busy && !streaming)) && (
+                  <MotionThinkingBadge
+                    activeTool={activeTool}
+                    isThinking={busy && !streaming && !activeTool}
                   />
-                ))}
-
-                {activeTool && (
-                  <div className="flex items-center gap-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-2 text-xs text-indigo-200 w-fit backdrop-blur-md shadow-md animate-pulse">
-                    <Loader2 size={13} className="animate-spin text-indigo-400" />
-                    <span className="text-zinc-400">Agent executing:</span>
-                    <code className="font-mono text-indigo-200 font-medium bg-indigo-500/20 px-1.5 py-0.5 rounded text-[11px]">
-                      {activeTool}
-                    </code>
-                  </div>
-                )}
-
-                {busy && !streaming && !activeTool && (
-                  <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2 text-xs text-zinc-400 w-fit backdrop-blur-md shadow-sm">
-                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping" />
-                    <span className="animate-pulse">Thinking…</span>
-                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
