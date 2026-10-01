@@ -48,16 +48,25 @@ def verify_password(password: str, hashed_password: str, salt: str) -> bool:
 
 
 def create_access_token(
-    user_id: str,
+    user_id: Any,
     role: str = "user",
     expires_in: int = DEFAULT_EXPIRY_SECONDS,
     extra_claims: Optional[dict[str, Any]] = None,
 ) -> str:
     """Create a signed JWT token."""
+    if isinstance(user_id, dict):
+        dict_payload = user_id
+        user_id = str(dict_payload.get("sub") or dict_payload.get("id") or "")
+        if role == "user" and "role" in dict_payload:
+            role = dict_payload["role"]
+        extra = {k: v for k, v in dict_payload.items() if k not in ("sub", "id", "role")}
+        if extra:
+            extra_claims = {**extra, **(extra_claims or {})}
+
     header = {"alg": ALGORITHM, "typ": "JWT"}
     now = int(time.time())
     payload = {
-        "sub": user_id,
+        "sub": str(user_id),
         "role": role,
         "iat": now,
         "exp": now + expires_in,

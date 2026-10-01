@@ -24,10 +24,12 @@ from src.auth.database import (
     get_user_by_email,
     get_user_by_id,
     init_auth_db,
+    list_user_documents,
     revoke_all_user_refresh_tokens,
     store_refresh_token,
     verify_and_consume_refresh_token,
 )
+from src.auth.middleware import get_current_user
 from src.auth.routes import auth_router
 from fastapi import FastAPI
 
@@ -233,6 +235,23 @@ class TestPhase1DatabaseAndAuth(unittest.TestCase):
         # Attempting to reuse old refresh token should fail with 401
         stale_res = self.client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
         self.assertEqual(stale_res.status_code, 401)
+
+    def test_dict_user_id_coercion_and_legacy_tokens(self):
+        """Verify tokens and database methods handle dictionary inputs and legacy tokens gracefully."""
+        user = create_user("dict_test@example.com", "Password123!", db_path=self.db_path)
+        token = create_access_token({"sub": user["id"], "email": user["email"], "role": user["role"]})
+        payload = decode_and_verify_token(token)
+        self.assertEqual(payload["sub"], user["id"])
+        self.assertIsInstance(payload["sub"], str)
+
+        docs = list_user_documents({"sub": user["id"]}, db_path=self.db_path)
+        self.assertEqual(docs, [])
+
+        class DummyRequest:
+            headers = {"Authorization": f"Bearer {token}"}
+        current = get_current_user(DummyRequest())
+        self.assertEqual(current["sub"], user["id"])
+        self.assertIsInstance(current["sub"], str)
 
 
 if __name__ == "__main__":

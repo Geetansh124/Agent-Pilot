@@ -52,6 +52,14 @@ class DocumentListResponse(BaseModel):
     total: int
 
 
+def _extract_user_id(user: dict[str, Any]) -> str:
+    """Safely extract tenant user id string from authenticated user payload."""
+    sub = user.get("sub", "guest") if isinstance(user, dict) else "guest"
+    if isinstance(sub, dict):
+        return str(sub.get("sub") or sub.get("id") or "guest")
+    return str(sub) if sub is not None else "guest"
+
+
 @documents_router.get(
     "/documents",
     response_model=DocumentListResponse,
@@ -60,7 +68,7 @@ class DocumentListResponse(BaseModel):
 )
 def list_documents(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Retrieve all persistent documents for the authenticated user or guest."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     docs = list_user_documents(user_id)
     return {"documents": docs, "total": len(docs)}
 
@@ -76,7 +84,7 @@ async def upload_document(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Upload document to Google Drive / local storage and register in database."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     return await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
 
 
@@ -91,7 +99,7 @@ async def upload_thread_document(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Compatibility endpoint for thread-specific document attachments."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     return await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
 
 
@@ -238,7 +246,7 @@ async def _process_document_upload(
 )
 def get_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Retrieve document metadata ensuring strict user tenant scoping."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     doc = get_user_document(doc_id, user_id)
     if not doc:
         raise HTTPException(
@@ -255,7 +263,7 @@ def get_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user)) 
 )
 def delete_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Delete document from storage backend and relational database table."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     doc = get_user_document(doc_id, user_id)
     if not doc:
         raise HTTPException(
@@ -281,7 +289,7 @@ def delete_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user
 )
 def download_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user)) -> Response:
     """Download raw document binary content with mime-type headers."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     doc = get_user_document(doc_id, user_id)
     if not doc:
         raise HTTPException(
@@ -314,7 +322,7 @@ def attach_document_to_thread_endpoint(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Attach document to thread with on-demand cache warm-up and tenant isolation."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     doc = get_user_document(doc_id, user_id)
     if not doc:
         raise HTTPException(
@@ -388,7 +396,7 @@ def get_thread_active_document_endpoint(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Retrieve active document metadata for this thread ensuring tenant isolation."""
-    user_id = user.get("sub", "guest")
+    user_id = _extract_user_id(user)
     active_doc = get_thread_active_document(thread_id=thread_id, user_id=user_id)
     if not active_doc:
         return {"attached": False, "document": None}

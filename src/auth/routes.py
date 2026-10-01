@@ -280,7 +280,12 @@ def google_auth(payload: GoogleAuthRequest) -> dict[str, Any]:
     if user and picture and not user.get("avatar_url"):
         user["avatar_url"] = picture
 
-    access_token = create_access_token({"sub": user["id"], "email": user["email"], "role": user["role"]})
+    access_token = create_access_token(
+        user_id=user["id"],
+        role=user.get("role", "user"),
+        expires_in=ACCESS_TOKEN_EXPIRY,
+        extra_claims={"email": user.get("email", "")},
+    )
     raw_refresh_token, hashed_refresh, expires_at = create_refresh_token()
     store_refresh_token(user_id=user["id"], token_hash=hashed_refresh, expires_at=expires_at)
 

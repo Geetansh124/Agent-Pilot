@@ -23,6 +23,13 @@ def get_current_user(request: Request) -> dict[str, Any]:
     try:
         payload = decode_and_verify_token(token)
         payload["is_authenticated"] = True
+        if isinstance(payload.get("sub"), dict):
+            sub_dict = payload["sub"]
+            if "role" in sub_dict and "role" not in payload:
+                payload["role"] = sub_dict["role"]
+            if "email" in sub_dict and "email" not in payload:
+                payload["email"] = sub_dict["email"]
+            payload["sub"] = str(sub_dict.get("sub") or sub_dict.get("id") or "")
         return payload
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {exc}") from exc

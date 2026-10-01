@@ -38,8 +38,7 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
         cursor = conn.cursor()
 
         # 1. Users Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
@@ -51,12 +50,10 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+        """)
 
         # 2. Refresh Tokens Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS refresh_tokens (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -64,12 +61,10 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
                 expires_at TIMESTAMP NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+        """)
 
         # 3. Persistent Documents (Google Drive Linked)
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -83,12 +78,10 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
                 status TEXT DEFAULT 'ready',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+        """)
 
         # 4. Chat Threads
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS threads (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -97,12 +90,10 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+        """)
 
         # 5. Thread Messages
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
                 thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
@@ -111,8 +102,7 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
                 tool_calls JSON,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+        """)
 
         # Indices for optimal query performance and tenant isolation
         for idx_sql in (
@@ -387,8 +377,16 @@ def save_document_record(
     }
 
 
-def list_user_documents(user_id: str, db_path: Optional[str] = None) -> list[dict[str, Any]]:
+def _norm_uid(uid: Any) -> str:
+    """Coerce user_id to string, extracting sub/id if passed a dictionary."""
+    if isinstance(uid, dict):
+        return str(uid.get("sub") or uid.get("id") or "")
+    return str(uid) if uid is not None else ""
+
+
+def list_user_documents(user_id: Any, db_path: Optional[str] = None) -> list[dict[str, Any]]:
     """List all documents belonging to a user, ordered by creation time descending."""
+    uid = _norm_uid(user_id)
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -399,13 +397,14 @@ def list_user_documents(user_id: str, db_path: Optional[str] = None) -> list[dic
             WHERE user_id = ?
             ORDER BY created_at DESC
             """,
-            (user_id,),
+            (uid,),
         )
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_user_document(doc_id: str, user_id: str, db_path: Optional[str] = None) -> Optional[dict[str, Any]]:
+def get_user_document(doc_id: str, user_id: Any, db_path: Optional[str] = None) -> Optional[dict[str, Any]]:
     """Get single document metadata, strictly validating ownership by user_id."""
+    uid = _norm_uid(user_id)
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -415,17 +414,18 @@ def get_user_document(doc_id: str, user_id: str, db_path: Optional[str] = None) 
             FROM documents
             WHERE id = ? AND user_id = ?
             """,
-            (doc_id, user_id),
+            (doc_id, uid),
         )
         row = cursor.fetchone()
         return dict(row) if row else None
 
 
-def delete_user_document_record(doc_id: str, user_id: str, db_path: Optional[str] = None) -> bool:
+def delete_user_document_record(doc_id: str, user_id: Any, db_path: Optional[str] = None) -> bool:
     """Delete document record if owned by user_id."""
+    uid = _norm_uid(user_id)
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id))
+        cursor.execute("DELETE FROM documents WHERE id = ? AND user_id = ?", (doc_id, uid))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -433,19 +433,18 @@ def delete_user_document_record(doc_id: str, user_id: str, db_path: Optional[str
 def attach_document_to_thread(
     thread_id: str,
     doc_id: str,
-    user_id: str,
+    user_id: Any,
     db_path: Optional[str] = None,
 ) -> bool:
     """Associate an active document with a thread ensuring user tenant ownership."""
+    uid = _norm_uid(user_id)
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
-        # Verify document ownership
-        cursor.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (doc_id, user_id))
+        cursor.execute("SELECT id FROM documents WHERE id = ? AND user_id = ?", (doc_id, uid))
         if not cursor.fetchone():
             return False
 
-        # Upsert thread with active_document_id
-        _ensure_user_exists(cursor, user_id)
+        _ensure_user_exists(cursor, uid)
         cursor.execute(
             """
             INSERT INTO threads (id, user_id, active_document_id)
@@ -454,7 +453,7 @@ def attach_document_to_thread(
                 active_document_id = excluded.active_document_id,
                 updated_at = CURRENT_TIMESTAMP
             """,
-            (thread_id, user_id, doc_id),
+            (thread_id, uid, doc_id),
         )
         conn.commit()
         return True
@@ -462,13 +461,14 @@ def attach_document_to_thread(
 
 def get_thread_active_document(
     thread_id: str,
-    user_id: Optional[str] = None,
+    user_id: Optional[Any] = None,
     db_path: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """Retrieve active document metadata for a thread belonging to the user."""
+    uid = _norm_uid(user_id) if user_id is not None else None
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
-        if user_id:
+        if uid:
             cursor.execute(
                 """
                 SELECT d.id, d.id AS doc_id, d.user_id, d.filename, d.mime_type, d.size_bytes,
@@ -477,7 +477,7 @@ def get_thread_active_document(
                 JOIN documents d ON t.active_document_id = d.id
                 WHERE t.id = ? AND t.user_id = ?
                 """,
-                (thread_id, user_id),
+                (thread_id, uid),
             )
         else:
             cursor.execute(
