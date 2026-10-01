@@ -46,6 +46,7 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    newChat();
     void loadThreads();
     return () => abortRef.current?.abort();
   }, [user]);
@@ -72,7 +73,6 @@ export default function Home() {
       const data = await response.json();
       if (Array.isArray(data)) {
         setThreads(data);
-        if (!threadId) newChat(data);
       }
     } catch { /* server starting */ }
   }

@@ -7,7 +7,7 @@ import uuid
 from collections import defaultdict
 from typing import Any, Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -25,25 +25,18 @@ from langraph_rag_backend import (
 )
 from src.rag import multi_doc_manager
 from src.auth import auth_router, create_access_token, decode_and_verify_token, get_current_user, init_auth_db
-from src.storage.routes import documents_router
+from src.auth.database import get_db_connection, _ensure_user_exists
+from src.storage.routes import documents_router, _extract_user_id
 from src.agent.routes import services_router
 from src.security import sanitize_output, validate_input_prompt
 from src.agent import hitl_manager
 from src.observability import audit_logger, cost_tracker, estimate_token_count
 
 app = FastAPI(title="Agent-Pilot API", version="1.1.0")
-_default_origins = [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:3001",
-]
-_env_origins = [
-    o.strip()
-    for o in os.getenv("FRONTEND_ORIGIN", "").split(",")
-    if o.strip()
-]
-origins = list(dict.fromkeys(_default_origins + _env_origins))
+origins = list(dict.fromkeys([
+    "http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001",
+    *[o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
+]))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -173,42 +166,97 @@ def health() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Threads
+# Multi-Tenant Threads (Scoped by Profile)
 # ---------------------------------------------------------------------------
+def _ensure_thread_registered(thread_id: str, user_id: str, title: Optional[str] = None) -> None:
+    """Register or update thread ownership in the threads table."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            _ensure_user_exists(cursor, user_id)
+            cursor.execute(
+                """
+                INSERT INTO threads (id, user_id, title)
+                VALUES (?, ?, COALESCE(?, 'New chat'))
+                ON CONFLICT(id) DO UPDATE SET
+                    title = CASE WHEN threads.title IN ('New Conversation', 'New chat') AND excluded.title != 'New chat'
+                                 THEN excluded.title ELSE threads.title END,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (thread_id, user_id, title),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def _user_owns_thread(thread_id: str, user_id: str, role: str = "user") -> bool:
+    """Verify whether user owns the thread."""
+    if role == "admin":
+        return True
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM threads WHERE id = ?", (thread_id,))
+            row = cursor.fetchone()
+            return True if not row else row["user_id"] == user_id
+    except Exception:
+        return True
+
+
 @app.get("/api/threads")
-def threads() -> list[dict[str, Any]]:
+def threads(user: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+    """Retrieve conversations belonging strictly to current user profile."""
+    user_id = _extract_user_id(user)
     saved_titles = get_all_thread_titles()
     result = []
-    for thread_id in reversed(retrieve_all_threads()):
-        messages = _messages(thread_id)
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        _ensure_user_exists(cursor, user_id)
+        if user_id == "guest":
+            cursor.execute("SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id NOT IN (SELECT id FROM threads)")
+            for r in cursor.fetchall():
+                cursor.execute("INSERT OR IGNORE INTO threads (id, user_id, title) VALUES (?, 'guest', 'New chat')", (r[0],))
+            conn.commit()
+        cursor.execute("SELECT id, title, updated_at FROM threads WHERE user_id = ? ORDER BY updated_at DESC", (user_id,))
+        user_threads = cursor.fetchall()
+
+    for row in user_threads:
+        tid = row["id"]
+        messages = _messages(tid)
         first = next((m["content"] for m in messages if m["role"] == "user"), "New chat")
-        result.append({
-            "id": thread_id,
-            "title": saved_titles.get(thread_id) or " ".join(first.split())[:48],
-            "messages": messages,
-        })
+        custom_title = saved_titles.get(tid) or row["title"]
+        title = custom_title if custom_title not in ("New Conversation", "New chat") else " ".join(first.split())[:48]
+        result.append({"id": tid, "title": title, "messages": messages})
     return result
 
 
 @app.post("/api/threads")
-def new_thread() -> dict[str, str]:
-    return {"id": str(uuid.uuid4()), "title": "New chat"}
+def new_thread(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+    """Create a new conversation thread bound to the authenticated user."""
+    user_id = _extract_user_id(user)
+    thread_id = str(uuid.uuid4())
+    _ensure_thread_registered(thread_id, user_id, "New chat")
+    return {"id": thread_id, "title": "New chat"}
 
 
 @app.get("/api/threads/{thread_id}")
-def thread(thread_id: str) -> dict[str, Any]:
-    return {
-        "id": thread_id,
-        "messages": _messages(thread_id),
-        "document": thread_document_metadata(thread_id) or None,
-    }
+def thread(thread_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    user_id = _extract_user_id(user)
+    if not _user_owns_thread(thread_id, user_id, user.get("role", "user")):
+        raise HTTPException(status_code=404, detail="Thread not found or access denied.")
+    return {"id": thread_id, "messages": _messages(thread_id), "document": thread_document_metadata(thread_id) or None}
 
 
 @app.patch("/api/threads/{thread_id}")
-def update_thread(thread_id: str, body: UpdateThreadRequest) -> dict[str, Any]:
+def update_thread(thread_id: str, body: UpdateThreadRequest, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    user_id = _extract_user_id(user)
+    if not _user_owns_thread(thread_id, user_id, user.get("role", "user")):
+        raise HTTPException(status_code=404, detail="Thread not found or access denied.")
     clean_title = " ".join(body.title.split())
     if not clean_title:
         raise HTTPException(status_code=422, detail="Title cannot be empty.")
+    _ensure_thread_registered(thread_id, user_id, clean_title)
     if set_thread_title(thread_id, clean_title):
         if hasattr(storage, "sync_database"):
             try:
@@ -220,7 +268,16 @@ def update_thread(thread_id: str, body: UpdateThreadRequest) -> dict[str, Any]:
 
 
 @app.delete("/api/threads/{thread_id}")
-def remove_thread(thread_id: str) -> dict[str, Any]:
+def remove_thread(thread_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    user_id = _extract_user_id(user)
+    if not _user_owns_thread(thread_id, user_id, user.get("role", "user")):
+        raise HTTPException(status_code=404, detail="Thread not found or access denied.")
+    try:
+        with get_db_connection() as conn:
+            conn.execute("DELETE FROM threads WHERE id = ?", (thread_id,))
+            conn.commit()
+    except Exception:
+        pass
     if delete_thread(thread_id):
         if hasattr(storage, "sync_database"):
             try:
@@ -235,7 +292,16 @@ def remove_thread(thread_id: str) -> dict[str, Any]:
 # Chat — batch (original, kept for backward compatibility)
 # ---------------------------------------------------------------------------
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: ChatRequest, req: Request, background_tasks: BackgroundTasks) -> ChatResponse:
+def chat(
+    request: ChatRequest,
+    req: Request,
+    background_tasks: BackgroundTasks,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ChatResponse:
+    user_id = _extract_user_id(user)
+    if not _user_owns_thread(request.thread_id, user_id, user.get("role", "user")):
+        raise HTTPException(status_code=403, detail="Access denied to this conversation thread.")
+    _ensure_thread_registered(request.thread_id, user_id, request.message[:48].strip())
     _check_rate_limit(req.client.host if req.client else "unknown")
     is_safe, reason = validate_input_prompt(request.message)
     if not is_safe:
@@ -286,21 +352,22 @@ def chat(request: ChatRequest, req: Request, background_tasks: BackgroundTasks) 
 # Chat — SSE streaming (new)
 # ---------------------------------------------------------------------------
 @app.post("/api/chat/stream")
-def chat_stream(request: ChatRequest, req: Request) -> StreamingResponse:
-    """Stream chat tokens as Server-Sent Events.
-
-    Event types:
-      - ``token``  — a content fragment from the assistant
-      - ``tool``   — a tool was invoked (includes ``name``)
-      - ``done``   — stream finished (includes ``tools_used``)
-      - ``error``  — an error occurred (includes ``message``)
-    """
+def chat_stream(
+    request: ChatRequest,
+    req: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> StreamingResponse:
+    """Stream chat tokens as Server-Sent Events."""
     _check_rate_limit(req.client.host if req.client else "unknown")
     is_safe, reason = validate_input_prompt(request.message)
     if not is_safe:
         audit_logger.log("security_block", "Prompt injection blocked", request.thread_id, status="blocked", details={"reason": reason})
         raise HTTPException(status_code=400, detail=f"Input rejected by security guardrail: {reason}")
 
+    user_id = _extract_user_id(user)
+    if not _user_owns_thread(request.thread_id, user_id, user.get("role", "user")):
+        raise HTTPException(status_code=403, detail="Access denied to this conversation thread.")
+    _ensure_thread_registered(request.thread_id, user_id, request.message[:48].strip())
     prompt_toks = estimate_token_count(request.message)
     budget_ok, budget_err = cost_tracker.check_request_budget(prompt_toks)
     if not budget_ok:
@@ -342,65 +409,14 @@ def chat_stream(request: ChatRequest, req: Request) -> StreamingResponse:
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
-
-
-# ---------------------------------------------------------------------------
-# Document upload
-# ---------------------------------------------------------------------------
-@app.post("/api/threads/{thread_id}/document")
-async def upload_document(
-    thread_id: str, file: UploadFile = File(...)
-) -> dict[str, Any]:
-    filename = file.filename or "document.pdf"
-    supported_exts = (".pdf", ".docx", ".doc", ".txt", ".md", ".markdown", ".csv", ".json")
-    has_valid_ext = any(filename.lower().endswith(ext) for ext in supported_exts)
-    allowed_content_types = {
-        "application/pdf",
-        "application/x-pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword",
-        "text/plain",
-        "text/markdown",
-        "text/csv",
-        "application/csv",
-        "application/json",
-    }
-    is_supported = has_valid_ext or ("." not in filename and file.content_type in allowed_content_types)
-    if not is_supported:
-        raise HTTPException(
-            status_code=415,
-            detail="Unsupported format. Supported: PDF, DOCX, CSV, TXT, Markdown, JSON.",
-        )
-    data = await file.read()
-    if len(data) > 200 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File exceeds the 200 MB limit.")
-    try:
-        res = ingest_pdf(data, thread_id=thread_id, filename=filename)
-        if hasattr(storage, "sync_database"):
-            try:
-                storage.sync_database("chatbot.db")
-            except Exception:
-                pass
-        return res
-    except Exception as exc:
-        raise HTTPException(
-            status_code=422, detail=f"Failed to process document: {exc}"
-        ) from exc
 
 
 @app.get("/api/threads/{thread_id}/documents")
 def list_thread_documents(thread_id: str) -> dict[str, Any]:
     """Retrieve all documents indexed for the specified thread."""
-    return {
-        "thread_id": thread_id,
-        "documents": multi_doc_manager.get_documents(thread_id),
-    }
+    return {"thread_id": thread_id, "documents": multi_doc_manager.get_documents(thread_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +482,3 @@ def login_for_token(req: TokenRequest) -> dict[str, Any]:
     else:
         token = create_access_token(user_id=req.username, role="user")
     return {"access_token": token, "token_type": "bearer"}
-
-
-
-

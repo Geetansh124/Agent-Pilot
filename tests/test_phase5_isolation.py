@@ -203,6 +203,42 @@ class TestMultiTenantIsolation(unittest.TestCase):
         self.assertIsNone(self.storage_backend.load_user_document_bytes(self.tenant_b["id"], "doc-part-1", "priv.txt"))
         self.assertIsNone(self.storage_backend.load_user_vector_store(self.tenant_b["id"], "doc-part-1", self.fake_embeddings))
 
+    def test_conversation_thread_profile_isolation(self):
+        """Verify threads and conversations are strictly isolated per user profile."""
+        from api_server import app
+        client = TestClient(app)
+
+        # Tenant A creates a thread
+        res_a = client.post("/api/threads", headers=self.headers_a)
+        self.assertEqual(res_a.status_code, 200)
+        thread_a_id = res_a.json()["id"]
+
+        # Rename Tenant A's thread
+        patch_res = client.patch(f"/api/threads/{thread_a_id}", json={"title": "Alpha Research Chat"}, headers=self.headers_a)
+        self.assertEqual(patch_res.status_code, 200)
+
+        # Tenant A lists threads -> thread_a_id is present
+        list_a = client.get("/api/threads", headers=self.headers_a).json()
+        ids_a = [t["id"] for t in list_a]
+        self.assertIn(thread_a_id, ids_a)
+
+        # Tenant B lists threads -> thread_a_id must NOT be visible
+        list_b = client.get("/api/threads", headers=self.headers_b).json()
+        ids_b = [t["id"] for t in list_b]
+        self.assertNotIn(thread_a_id, ids_b)
+
+        # Tenant B attempts to read Tenant A's thread -> 404 forbidden/not found
+        res_b_read = client.get(f"/api/threads/{thread_a_id}", headers=self.headers_b)
+        self.assertEqual(res_b_read.status_code, 404)
+
+        # Tenant B attempts to delete Tenant A's thread -> 404 forbidden/not found
+        res_b_del = client.delete(f"/api/threads/{thread_a_id}", headers=self.headers_b)
+        self.assertEqual(res_b_del.status_code, 404)
+
+        # Tenant A can cleanly delete their thread
+        res_a_del = client.delete(f"/api/threads/{thread_a_id}", headers=self.headers_a)
+        self.assertEqual(res_a_del.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()
