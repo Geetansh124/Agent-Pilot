@@ -2,16 +2,8 @@
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import {
-  ArrowUp,
-  Square,
-  Loader2,
-  Upload,
-  Globe,
-  Code2,
-  BarChart3,
-  FileText,
-  X,
-  Cloud,
+  ArrowUp, Square, Loader2, Upload, Globe,
+  Code2, BarChart3, FileText, X, Cloud,
 } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -57,6 +49,15 @@ export default function Home() {
     void loadThreads();
     return () => abortRef.current?.abort();
   }, [user]);
+
+  // Keep-alive ping: prevents Render free-tier spin-down during active sessions
+  useEffect(() => {
+    const KEEP_ALIVE_MS = 10 * 60 * 1000;
+    const ping = () => { fetch(`${API}/health`).catch(() => {}); };
+    ping();
+    const interval = setInterval(ping, KEEP_ALIVE_MS);
+    return () => clearInterval(interval);
+  }, [API]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

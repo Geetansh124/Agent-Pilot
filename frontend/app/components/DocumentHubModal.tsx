@@ -37,12 +37,20 @@ export default function DocumentHubModal({
   const API = getApiBaseUrl();
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<number>(0); // 0=idle, 1=uploading, 2=syncing, 3=indexing
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploading = uploadStage > 0;
+
+  const UPLOAD_STAGES: Record<number, string> = {
+    1: "Uploading payload to server…",
+    2: "Syncing with cloud storage…",
+    3: "Indexing vector embeddings for RAG…",
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -70,7 +78,7 @@ export default function DocumentHubModal({
   };
 
   const handleFileUpload = async (file: File) => {
-    setUploading(true);
+    setUploadStage(1);
     setError(null);
     const formData = new FormData();
     formData.append("file", file);
@@ -78,11 +86,18 @@ export default function DocumentHubModal({
       formData.append("thread_id", activeThreadId);
     }
 
+    // Advance to stage 2 after a short delay to simulate the upload reaching the server
+    const stageTimer2 = setTimeout(() => setUploadStage(2), 2500);
+    const stageTimer3 = setTimeout(() => setUploadStage(3), 8000);
+
     try {
       const res = await authFetch(`${API}/api/documents/upload`, {
         method: "POST",
         body: formData,
       });
+
+      clearTimeout(stageTimer2);
+      clearTimeout(stageTimer3);
 
       if (res.ok) {
         const newDoc = await res.json();
@@ -95,10 +110,12 @@ export default function DocumentHubModal({
         setError(errData.detail || `Upload failed (HTTP ${res.status}). Please retry.`);
       }
     } catch (err) {
+      clearTimeout(stageTimer2);
+      clearTimeout(stageTimer3);
       console.error("Document upload error:", err);
       setError("Backend server is currently unreachable. If hosted on a free cloud tier, it may be waking up. Please retry in a few moments.");
     } finally {
-      setUploading(false);
+      setUploadStage(0);
     }
   };
 
@@ -205,7 +222,7 @@ export default function DocumentHubModal({
               className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-indigo-500 active:scale-95 transition disabled:opacity-50 cursor-pointer w-full sm:w-auto"
             >
               {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-              <span>{uploading ? "Indexing & Syncing…" : "Upload Document"}</span>
+              <span>{uploading ? (UPLOAD_STAGES[uploadStage] || "Processing…") : "Upload Document"}</span>
             </button>
             <input
               ref={fileInputRef}
@@ -220,6 +237,38 @@ export default function DocumentHubModal({
             />
           </div>
         </div>
+
+        {/* Upload Progress Stages */}
+        {uploading && (
+          <div className="mx-6 mt-3 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.06] px-4 py-3">
+            <div className="flex items-center gap-4">
+              {[1, 2, 3].map((stage) => {
+                const isActive = uploadStage === stage;
+                const isComplete = uploadStage > stage;
+                return (
+                  <div key={stage} className="flex items-center gap-2 text-xs">
+                    <div
+                      className={`h-2 w-2 rounded-full transition-all duration-300 ${
+                        isComplete
+                          ? "bg-emerald-400 shadow-sm shadow-emerald-400/50"
+                          : isActive
+                            ? "bg-indigo-400 animate-pulse shadow-sm shadow-indigo-400/50"
+                            : "bg-zinc-600"
+                      }`}
+                    />
+                    <span
+                      className={`transition-colors ${
+                        isComplete ? "text-emerald-400" : isActive ? "text-indigo-300 font-medium" : "text-zinc-500"
+                      }`}
+                    >
+                      {UPLOAD_STAGES[stage]}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Error notification */}
         {error && (

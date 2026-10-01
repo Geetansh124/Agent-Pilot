@@ -217,23 +217,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearAuth();
   };
 
-  // Authenticated fetch wrapper that automatically attaches Authorization: Bearer <token>
+  // Authenticated fetch wrapper that automatically attaches Authorization: Bearer <token>.
+  // Includes exponential backoff retry for network errors and 502/503 (cold-start resilience).
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}): Promise<Response> => {
-      const headers = new Headers(options.headers || {});
-      const currentToken = accessToken || localStorage.getItem("agent_pilot_token");
+      const MAX_RETRIES = 2;
+      const BASE_DELAY_MS = 1000;
 
-      if (currentToken) {
-        headers.set("Authorization", `Bearer ${currentToken}`);
+      const buildHeaders = (): Headers => {
+        const headers = new Headers(options.headers || {});
+        const currentToken = accessToken || localStorage.getItem("agent_pilot_token");
+        if (currentToken) {
+          headers.set("Authorization", `Bearer ${currentToken}`);
+        }
+        // When body is FormData, let the browser auto-generate the
+        // multipart/form-data Content-Type with the correct boundary.
+        if (options.body instanceof FormData) {
+          headers.delete("Content-Type");
+        }
+        return headers;
+      };
+
+      let lastError: unknown = null;
+      let response: Response | null = null;
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const headers = buildHeaders();
+          response = await fetch(url, { ...options, headers });
+
+          // Retry on 502/503 (cold-start / deployment in progress)
+          if ((response.status === 502 || response.status === 503) && attempt < MAX_RETRIES) {
+            const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+            console.warn(`[authFetch] ${response.status} on attempt ${attempt + 1}, retrying in ${delay}ms…`);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+
+          break; // Success or non-retryable status
+        } catch (err) {
+          lastError = err;
+          // Retry on network errors (TypeError: Failed to fetch / CORS during deploy)
+          if (attempt < MAX_RETRIES) {
+            const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+            console.warn(`[authFetch] Network error on attempt ${attempt + 1}, retrying in ${delay}ms…`, err);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+        }
       }
 
-      // When body is FormData, let the browser auto-generate the
-      // multipart/form-data Content-Type with the correct boundary.
-      if (options.body instanceof FormData) {
-        headers.delete("Content-Type");
+      // All retries exhausted with network errors
+      if (!response) {
+        throw lastError ?? new Error("Request failed after retries");
       }
-
-      let response = await fetch(url, { ...options, headers });
 
       // If token expired (401), attempt refresh and retry once
       if (response.status === 401) {
@@ -243,6 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (refreshed) {
             const newToken = localStorage.getItem("agent_pilot_token");
             if (newToken) {
+              const headers = buildHeaders();
               headers.set("Authorization", `Bearer ${newToken}`);
               response = await fetch(url, { ...options, headers });
             }

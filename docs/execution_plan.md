@@ -53,7 +53,7 @@
 
 ---
 
-### Phase 2: Backend Cold-Start & Keep-Alive Resilience
+### Phase 2: Backend Cold-Start & Keep-Alive Resilience ✅
 * **Goal**: Prevent Render free-tier spin-down from causing timeouts or perceived outages.
 * **Tasks**:
   1. **Background Keep-Alive Cron/Ping**:
@@ -104,5 +104,8 @@
 | 2 | Authenticated POST `/api/documents/upload` | HTTP 201 Created, Drive synced | ✅ Complete |
 | 3 | Push FormData & error handling fix | Commit `a1a8f19` on `main` | ✅ Complete |
 | 4 | User verifies upload in browser | Document appears in Cloud Hub | ⏳ Pending User Check |
-| 5 | Grounded chat citation test | Accurate Q&A citing document | ⏳ Next |
-| 6 | Agentic tools test (Python + Web) | Correct execution outputs | ⏳ Next |
+| 5 | Exponential backoff retry in `authFetch` | 502/503 + network errors retried 2× | ✅ Complete |
+| 6 | Upload progress stages in DocumentHubModal | 3-stage visual indicator | ✅ Complete |
+| 7 | Keep-alive ping from frontend | `/health` pinged every 10 min | ✅ Complete |
+| 8 | Grounded chat citation test | Accurate Q&A citing document | ⏳ Next |
+| 9 | Agentic tools test (Python + Web) | Correct execution outputs | ⏳ Next |
