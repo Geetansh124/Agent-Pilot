@@ -132,6 +132,18 @@ def startup_storage_restore() -> None:
     except Exception as exc:
         logger.warning("Startup auth DB initialization encountered warning: %s", exc)
 
+    # Reconcile: re-populate any document records missing from SQLite but still present in Google Drive
+    try:
+        if hasattr(storage, "reconcile_documents_from_drive"):
+            count = storage.reconcile_documents_from_drive()
+            if count:
+                logger.info("Startup reconciliation restored %d document records from Google Drive.", count)
+                # Persist the reconciled database back to Drive immediately
+                if hasattr(storage, "sync_database"):
+                    storage.sync_database("chatbot.db")
+    except Exception as exc:
+        logger.warning("Startup document reconciliation warning: %s", exc)
+
 
 @app.on_event("shutdown")
 def shutdown_storage_sync() -> None:

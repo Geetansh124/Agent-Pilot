@@ -415,3 +415,113 @@ class GoogleDriveTenantMixin:
             return True
         except Exception:
             return False
+
+    def reconcile_documents_from_drive(self) -> int:
+        """Scan Google Drive user document folders and re-insert missing records into SQLite.
+
+        Walks Agent-Pilot/users/{user_id}/documents/{doc_id}/ hierarchy,
+        reads metadata.json from each doc folder, and upserts into the
+        documents table for any record not already present.  Returns the
+        count of reconciled (newly inserted) records.
+        """
+        if not self._enabled:
+            return 0
+
+        reconciled = 0
+        try:
+            from src.auth.database import save_document_record, list_user_documents
+
+            root_id = self._get_root_id()
+
+            # Find the "users" folder under root
+            q_users = f"'{root_id}' in parents and name = 'users' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            res = self._service.files().list(q=q_users, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
+            users_folders = res.get("files", [])
+            if not users_folders:
+                return 0
+            users_folder_id = users_folders[0]["id"]
+
+            # List each user subfolder (user_id)
+            q_uid = f"'{users_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            uid_res = self._service.files().list(q=q_uid, spaces="drive", fields="files(id, name)", pageSize=200, supportsAllDrives=True).execute()
+
+            for user_folder in uid_res.get("files", []):
+                user_id = user_folder["name"]
+                uid_folder_id = user_folder["id"]
+
+                # Find "documents" subfolder
+                q_docs = f"'{uid_folder_id}' in parents and name = 'documents' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+                docs_res = self._service.files().list(q=q_docs, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
+                docs_folders = docs_res.get("files", [])
+                if not docs_folders:
+                    continue
+                docs_folder_id = docs_folders[0]["id"]
+
+                # Build set of existing doc IDs for this user (fast lookup)
+                existing_ids = {d["id"] for d in list_user_documents(user_id)}
+
+                # List each doc_id subfolder
+                q_did = f"'{docs_folder_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+                did_res = self._service.files().list(q=q_did, spaces="drive", fields="files(id, name)", pageSize=500, supportsAllDrives=True).execute()
+
+                for doc_folder in did_res.get("files", []):
+                    doc_id = doc_folder["name"]
+                    if doc_id in existing_ids:
+                        continue  # Already in SQLite
+
+                    doc_fid = doc_folder["id"]
+                    # Try to read metadata.json from this doc folder
+                    q_meta = f"'{doc_fid}' in parents and name = 'metadata.json' and trashed = false"
+                    meta_res = self._service.files().list(q=q_meta, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
+                    meta_files = meta_res.get("files", [])
+                    if not meta_files:
+                        continue
+
+                    try:
+                        meta_bytes = self._service.files().get_media(fileId=meta_files[0]["id"], supportsAllDrives=True).execute()
+                        meta = json.loads(meta_bytes.decode("utf-8")) if meta_bytes else {}
+                    except Exception:
+                        meta = {}
+
+                    filename = meta.get("filename") or meta.get("original_name") or "unknown"
+                    size_bytes = meta.get("size_bytes", 0)
+                    mime_type = meta.get("mime_type", "application/octet-stream")
+
+                    # Find the actual document file to get its Drive web link
+                    web_link = None
+                    drive_file_id = None
+                    escaped_fn = self._escape_query_str(filename)
+                    q_file = f"'{doc_fid}' in parents and name = '{escaped_fn}' and trashed = false"
+                    file_res = self._service.files().list(
+                        q=q_file, spaces="drive",
+                        fields="files(id, webViewLink, size)",
+                        supportsAllDrives=True,
+                    ).execute()
+                    file_hits = file_res.get("files", [])
+                    if file_hits:
+                        drive_file_id = file_hits[0].get("id")
+                        web_link = file_hits[0].get("webViewLink")
+                        if not size_bytes:
+                            size_bytes = int(file_hits[0].get("size", 0))
+
+                    save_document_record(
+                        doc_id=doc_id,
+                        user_id=user_id,
+                        filename=filename,
+                        size_bytes=size_bytes,
+                        mime_type=mime_type,
+                        drive_file_id=drive_file_id,
+                        drive_web_link=web_link,
+                        drive_folder_id=doc_fid,
+                        chunks_count=0,
+                        status="ready",
+                    )
+                    reconciled += 1
+                    logger.info("Reconciled missing document record: user=%s doc=%s file=%s", user_id, doc_id, filename)
+
+        except Exception as exc:
+            logger.warning("Document reconciliation from Google Drive encountered error: %s", exc)
+
+        if reconciled:
+            logger.info("Reconciliation complete: %d document records restored from Google Drive.", reconciled)
+        return reconciled

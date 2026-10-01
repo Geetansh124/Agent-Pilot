@@ -10,7 +10,7 @@ import os
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
 from src.auth.database import (
@@ -79,13 +79,18 @@ def list_documents(user: dict[str, Any] = Depends(get_current_user)) -> dict[str
     summary="Upload a new document to persistent multi-tenant cloud storage",
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     thread_id: Optional[str] = Form(None),
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Upload document to Google Drive / local storage and register in database."""
     user_id = _extract_user_id(user)
-    return await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
+    result = await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
+    # Sync SQLite to persistent storage so document records survive container restarts
+    if hasattr(storage, "sync_database"):
+        background_tasks.add_task(storage.sync_database, "chatbot.db")
+    return result
 
 
 @documents_router.post(
@@ -95,12 +100,16 @@ async def upload_document(
 )
 async def upload_thread_document(
     thread_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Compatibility endpoint for thread-specific document attachments."""
     user_id = _extract_user_id(user)
-    return await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
+    result = await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
+    if hasattr(storage, "sync_database"):
+        background_tasks.add_task(storage.sync_database, "chatbot.db")
+    return result
 
 
 async def _process_document_upload(
@@ -261,7 +270,11 @@ def get_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user)) 
     status_code=status.HTTP_200_OK,
     summary="Delete a persistent document from storage and database",
 )
-def delete_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def delete_document(
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Delete document from storage backend and relational database table."""
     user_id = _extract_user_id(user)
     doc = get_user_document(doc_id, user_id)
@@ -279,6 +292,9 @@ def delete_document(doc_id: str, user: dict[str, Any] = Depends(get_current_user
 
     # Delete database record
     delete_user_document_record(doc_id=doc_id, user_id=user_id)
+    # Sync SQLite to persistent storage so deletions survive container restarts
+    if hasattr(storage, "sync_database"):
+        background_tasks.add_task(storage.sync_database, "chatbot.db")
     return {"message": "Document deleted successfully.", "doc_id": doc_id}
 
 
