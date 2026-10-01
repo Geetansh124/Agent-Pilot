@@ -31,26 +31,27 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
     """Google Drive storage backend implementing the StorageBackend interface."""
 
-    def __init__(
-        self,
-        service_account_json: Optional[str | dict] = None,
-        root_folder_id: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        self._raw_creds = (
-            service_account_json
-            or kwargs.get("service_account_info")
-            or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-        )
-        self._root_folder_id = (
-            root_folder_id
-            or kwargs.get("folder_id")
-            or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
-        )
-        self._enabled = False
-        self._service: Any = None
-        self._folder_cache: dict[str, str] = {}  # "category/thread_id/subdirs" -> folder_id
+    def __init__(self, service_account_json: Optional[str | dict] = None, root_folder_id: Optional[str] = None, **kwargs: Any) -> None:
+        self._raw_creds = service_account_json or kwargs.get("service_account_info") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+        self._root_folder_id = root_folder_id or kwargs.get("folder_id") or os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+        self._enabled, self._service = False, None
+        self._folder_cache: dict[str, str] = self._load_cache()
         self._init_service()
+
+    def _load_cache(self) -> dict[str, str]:
+        p = Path("workspaces_storage/.drive_cache.json")
+        try:
+            return json.loads(p.read_text("utf-8")) if p.exists() else {}
+        except Exception:
+            return {}
+
+    def _save_cache(self) -> None:
+        try:
+            p = Path("workspaces_storage/.drive_cache.json")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(self._folder_cache), "utf-8")
+        except Exception:
+            pass
 
     def _init_service(self) -> None:
         """Initialize Google Drive service client via User OAuth2 (refresh token) or Service Account."""
@@ -185,6 +186,7 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
             folder_id = folder.get("id")
 
         self._folder_cache["root"] = folder_id
+        self._save_cache()
         return folder_id
 
     def get_or_create_folder(self, name: str, parent_id: str) -> str:
@@ -203,23 +205,14 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
             includeItemsFromAllDrives=True,
         ).execute()
         files = res.get("files", [])
-
-        if files:
-            folder_id = files[0]["id"]
-        else:
-            meta = {
-                "name": name,
-                "mimeType": "application/vnd.google-apps.folder",
-                "parents": [parent_id],
-            }
-            folder = self._service.files().create(
-                body=meta,
-                fields="id",
-                supportsAllDrives=True,
-            ).execute()
-            folder_id = folder.get("id")
+        folder_id = files[0]["id"] if files else self._service.files().create(
+            body={"name": name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]},
+            fields="id",
+            supportsAllDrives=True,
+        ).execute().get("id")
 
         self._folder_cache[cache_key] = folder_id
+        self._save_cache()
         return folder_id
 
     def get_or_create_thread_folder(self, category: str, thread_id: str) -> str:
@@ -237,6 +230,7 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
         thread_folder_id = self.get_or_create_folder(clean_tid, cat_folder_id)
 
         self._folder_cache[cache_key] = thread_folder_id
+        self._save_cache()
         return thread_folder_id
 
     def _resolve_target_folder(self, category: str, thread_id: str, relative_path: str) -> tuple[str, str]:
@@ -281,6 +275,7 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
         res = self._service.files().list(
             q=q,
             spaces="drive",
+            orderBy="modifiedTime desc",
             fields="files(id)",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
@@ -296,6 +291,12 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
                 supportsAllDrives=True,
             ).execute()
             item = updated
+            if len(files) > 1:
+                for duplicate in files[1:]:
+                    try:
+                        self._service.files().delete(fileId=duplicate["id"], supportsAllDrives=True).execute()
+                    except Exception:
+                        pass
         else:
             meta = {"name": leaf_name, "parents": [folder_id]}
             created = self._service.files().create(
@@ -365,6 +366,7 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
             res = self._service.files().list(
                 q=q,
                 spaces="drive",
+                orderBy="modifiedTime desc",
                 fields="files(id, name, mimeType, size, modifiedTime)",
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,

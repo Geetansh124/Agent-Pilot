@@ -86,8 +86,7 @@ async def upload_document(
 ) -> dict[str, Any]:
     """Upload document to Google Drive / local storage and register in database."""
     user_id = _extract_user_id(user)
-    result = await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
-    # Sync SQLite to persistent storage so document records survive container restarts
+    result = await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id, background_tasks=background_tasks)
     if hasattr(storage, "sync_database"):
         background_tasks.add_task(storage.sync_database, "chatbot.db")
     return result
@@ -106,7 +105,7 @@ async def upload_thread_document(
 ) -> dict[str, Any]:
     """Compatibility endpoint for thread-specific document attachments."""
     user_id = _extract_user_id(user)
-    result = await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id)
+    result = await _process_document_upload(file=file, user_id=user_id, thread_id=thread_id, background_tasks=background_tasks)
     if hasattr(storage, "sync_database"):
         background_tasks.add_task(storage.sync_database, "chatbot.db")
     return result
@@ -116,6 +115,7 @@ async def _process_document_upload(
     file: UploadFile,
     user_id: str,
     thread_id: Optional[str] = None,
+    background_tasks: Optional[BackgroundTasks] = None,
 ) -> dict[str, Any]:
     """Validate, persist to storage adapter, record in database, and index for RAG."""
     filename = file.filename or "uploaded_document.pdf"
@@ -192,8 +192,15 @@ async def _process_document_upload(
             chunks_count = len(chunks)
             pages_count = len(docs)
 
-            # Persist vector store in user-scoped partition
-            storage.save_user_vector_store(user_id=user_id, doc_id=doc_id, vector_store=vector_store)
+            if getattr(storage, "_enabled", False):
+                from storage.local import LocalStorageBackend
+                LocalStorageBackend().save_user_vector_store(user_id=user_id, doc_id=doc_id, vector_store=vector_store)
+                if background_tasks:
+                    background_tasks.add_task(storage.save_user_vector_store, user_id, doc_id, vector_store)
+                else:
+                    storage.save_user_vector_store(user_id=user_id, doc_id=doc_id, vector_store=vector_store)
+            elif hasattr(storage, "save_user_vector_store"):
+                storage.save_user_vector_store(user_id=user_id, doc_id=doc_id, vector_store=vector_store)
     except Exception as exc:
         logger.warning("User vector indexing warning for doc %s: %s", doc_id, exc)
 
@@ -313,7 +320,14 @@ def download_document(doc_id: str, user: dict[str, Any] = Depends(get_current_us
             detail=f"Document '{doc_id}' not found or access denied.",
         )
 
-    raw_bytes = storage.load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])
+    try:
+        raw_bytes = storage.load_user_document_bytes(
+            user_id=user_id, doc_id=doc_id, filename=doc["filename"], drive_file_id=doc.get("drive_file_id")
+        )
+    except TypeError:
+        raw_bytes = storage.load_user_document_bytes(
+            user_id=user_id, doc_id=doc_id, filename=doc["filename"]
+        )
     if not raw_bytes:
         from storage.local import LocalStorageBackend
         raw_bytes = LocalStorageBackend().load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])

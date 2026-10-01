@@ -365,6 +365,7 @@ class LocalStorageBackend(StorageBackend):
         user_id: str,
         doc_id: str,
         filename: str,
+        **kwargs: Any,
     ) -> Optional[bytes]:
         """Load document raw bytes for a user."""
         clean_uid = sanitize_thread_id(user_id)

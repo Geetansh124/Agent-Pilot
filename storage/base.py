@@ -240,6 +240,7 @@ class StorageBackend(ABC):
         user_id: str,
         doc_id: str,
         filename: str,
+        **kwargs: Any,
     ) -> Optional[bytes]:
         """Download raw bytes of a user document."""
         rel_path = f"users/{sanitize_thread_id(user_id)}/documents/{sanitize_thread_id(doc_id)}/{filename}"

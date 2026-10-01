@@ -38,13 +38,14 @@ export default function DocumentHubModal({
   const [documents, setDocuments] = useState<StoredDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadStage, setUploadStage] = useState<number>(0); // 0=idle, 1=uploading, 2=syncing, 3=indexing
+  const [pendingFile, setPendingFile] = useState<{ name: string; size: number } | null>(null);
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const uploading = uploadStage > 0;
+  const uploading = uploadStage > 0 || pendingFile !== null;
 
   const UPLOAD_STAGES: Record<number, string> = {
     1: "Uploading payload to server…",
@@ -78,6 +79,7 @@ export default function DocumentHubModal({
   };
 
   const handleFileUpload = async (file: File) => {
+    setPendingFile({ name: file.name, size: file.size });
     setUploadStage(1);
     setError(null);
     const formData = new FormData();
@@ -86,9 +88,8 @@ export default function DocumentHubModal({
       formData.append("thread_id", activeThreadId);
     }
 
-    // Advance to stage 2 after a short delay to simulate the upload reaching the server
-    const stageTimer2 = setTimeout(() => setUploadStage(2), 2500);
-    const stageTimer3 = setTimeout(() => setUploadStage(3), 8000);
+    const stageTimer2 = setTimeout(() => setUploadStage(2), 1500);
+    const stageTimer3 = setTimeout(() => setUploadStage(3), 4000);
 
     try {
       const res = await authFetch(`${API}/api/documents/upload`, {
@@ -115,6 +116,7 @@ export default function DocumentHubModal({
       console.error("Document upload error:", err);
       setError("Backend server is currently unreachable. If hosted on a free cloud tier, it may be waking up. Please retry in a few moments.");
     } finally {
+      setPendingFile(null);
       setUploadStage(0);
     }
   };
@@ -284,7 +286,7 @@ export default function DocumentHubModal({
               <Loader2 size={24} className="animate-spin text-indigo-400" />
               <p className="text-xs">Loading documents catalog…</p>
             </div>
-          ) : filteredDocs.length === 0 ? (
+          ) : filteredDocs.length === 0 && !pendingFile ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 mb-3">
                 <FileText size={32} className="text-zinc-500" />
@@ -296,6 +298,35 @@ export default function DocumentHubModal({
             </div>
           ) : (
             <div className="space-y-2">
+              {pendingFile && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-indigo-500/40 bg-indigo-500/[0.08] p-3 shadow-lg shadow-indigo-500/10">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/20 p-2 text-indigo-400 shrink-0">
+                      <Loader2 size={16} className="animate-spin text-indigo-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-xs font-semibold text-white">{pendingFile.name}</p>
+                        <span className="flex items-center gap-1 rounded bg-indigo-500/30 px-2 py-0.5 text-[10px] font-medium text-indigo-200 border border-indigo-500/40">
+                          <Loader2 size={10} className="animate-spin" />
+                          Saving to Cloud…
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+                        <span>{formatFileSize(pendingFile.size)}</span>
+                        <span>•</span>
+                        <span className="text-indigo-300 font-mono text-[10px]">
+                          {UPLOAD_STAGES[uploadStage] || "Processing…"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <span className="text-xs text-zinc-400 italic">Syncing…</span>
+                  </div>
+                </div>
+              )}
+
               {filteredDocs.map((doc) => {
                 const isAttached = doc.id === activeDocumentId || (doc.doc_id && doc.doc_id === activeDocumentId);
                 const isAttaching = attachingId === doc.id;
@@ -388,9 +419,13 @@ export default function DocumentHubModal({
         <div className="flex items-center justify-between border-t border-white/[0.08] px-6 py-3 bg-zinc-950/80 text-[11px] text-zinc-500">
           <div className="flex items-center gap-1.5">
             <ShieldCheck size={13} className="text-emerald-400" />
-            <span>Encrypted cloud storage with tenant boundary protection</span>
+            <span>Encrypted cloud storage (Google Drive + Vector RAG)</span>
           </div>
-          <span>{documents.length} document{documents.length === 1 ? "" : "s"} total</span>
+          <span>
+            {pendingFile
+              ? `${documents.length + 1} documents (${documents.length} ready, 1 saving)`
+              : `${documents.length} document${documents.length === 1 ? "" : "s"} total`}
+          </span>
         </div>
       </div>
     </div>

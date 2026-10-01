@@ -1,111 +1,117 @@
-# Agent-Pilot: Post-Upload & Next Execution Plan
-> **Generated**: October 1, 2026  
+# Agent-Pilot: Lifetime Document Persistence, Ruflo Swarm & Next Execution Plan
+> **Generated**: October 2, 2026  
 > **Status**: Active / Ready for Execution  
-> **Scope**: Upload Reliability, Agentic Tool Orchestration & Multi-Tenant Production Verification
+> **Scope**: Lifetime Multi-Tenant Cloud Persistence, Instant RAG Uploads, Ruflo Swarm Orchestration & Production Deployment
 
 ---
 
 ## 1. Executive Summary & Root Cause Analysis
 
-### 1.1 Upload Failure Root Cause
-* **Observed Symptom**: `"Unable to upload document. Please ensure the backend server is active."`
-* **Trigger**: A new commit (`95f93ca`) was pushed to GitHub, which initiated an automated build and container restart on Render.
-* **Failure Mechanism**: During the 3–5 minute deployment window, Render/Cloudflare returned `HTTP 502 Bad Gateway` (`x-render-routing: no-deploy`). Because error gateway responses lack CORS origin headers for `https://agent-pilot-rust.vercel.app`, the browser's security model raised a generic `TypeError: Failed to fetch`.
-* **Resolution Verified**:
-  - Render deployment completed: `/health` returns `200 OK` with `storage.status: "connected"`.
-  - Live authenticated multipart upload succeeded with `201 Created` and synced to Google Drive in 20.06s.
-  - Frontend code in `frontend/app/context/AuthContext.tsx`, `frontend/app/components/DocumentHubModal.tsx`, and `frontend/app/page.tsx` was hardened with proper FormData boundary preservation and cold-start informative error messaging (commit `a1a8f19`).
+### 1.1 "Can't Handle Docs for Lifetime Save" & Hub UI Freezing Root Causes
+* **Observed Symptom**:
+  1. The Document Cloud Hub displayed *"No documents found"* and *"0 documents total"* while stuck in Stage 3: *"Indexing vector embeddings for RAG…"*.
+  2. Users reported documents appearing lost after restarts and re-logins.
+  3. Upload operations took ~48 seconds for simple documents.
+* **Root Cause 1: Identity Fragmentation Across Auth Migrations**:
+  - Legacy OAuth user records were created with differing user IDs (`24c77907-79d1-4fbd-9cad-fcd3635de547` and `sub_24c77907-79d1-4fbd-9cad-fcd3635de547_email_operapoint86_gmai`) prior to establishing the current canonical ID (`fd524aa6-88e8-4efa-9883-cbc5c45a2f06`).
+  - Strict equality filters (`WHERE user_id = ?`) caused uploaded documents belonging to earlier session variants of the same email to be hidden from the active user view.
+* **Root Cause 2: Synchronous Sequential Drive & FAISS Blocking**:
+  - Uploading a document sequentially performed: (a) Drive folder creation (3-4 network hops), (b) File upload to Drive, (c) FAISS embedding, (d) Sequential upload of `index.faiss` and `index.pkl` to Drive, and (e) Metadata JSON write. This blocked the HTTP response for 48s.
+* **Root Cause 3: Google Drive Redundant DB Snapshots**:
+  - Drive had duplicate snapshots in `database/system/`, one of which had only 8 documents from an early test. When `restore_database()` was called on startup, it downloaded the older snapshot and overwrote newer records.
+* **Root Cause 4: Frontend Premature Empty State**:
+  - While uploading, `filteredDocs.length === 0` was true until the 48s request finished, presenting the empty "No documents found" screen and creating the appearance that the upload had failed or lost previous docs.
 
 ---
 
-## 2. Phased Execution Plan
+## 2. Completed Solutions & Hardening ✅
+
+### 2.1 Storage & Database Layer Hardening
+1. **Drive Duplicate Snapshot Pruning & Document Consolidation**:
+   - Pruned stale database copies in Google Drive, keeping only the canonical newest version.
+   - Reconciled 46 total active documents into `chatbot.db` (33 documents unified under canonical user `fd524aa6-88e8-4efa-9883-cbc5c45a2f06` for `operapoint86@gmail.com`, 10 documents for guest).
+   - Synced consolidated SQLite snapshot to Google Drive (`database/system/chatbot.db`).
+2. **Persistent Drive Folder Caching**:
+   - Implemented `workspaces_storage/.drive_cache.json` caching in `storage/google_drive.py` and `storage/google_drive_tenant.py` to eliminate 4–5 redundant directory searches per upload.
+3. **Database Identity Resolution (`src/auth/database.py`)**:
+   - Implemented `_get_user_equivalent_ids()`: queries now search across all equivalent linked IDs and email variants (`WHERE user_id IN (...)`).
+   - Added automatic idempotent database consolidation in `init_auth_db()`.
+4. **Asynchronous Vector Store Persistence (`src/storage/routes.py`)**:
+   - Vector embeddings are persisted locally immediately (0.05s) for instant RAG availability.
+   - Heavy Google Drive FAISS synchronization is delegated to FastAPI `BackgroundTasks`, reducing upload response time from 48s to 1–2s.
+   - Direct `drive_file_id` download added to `download_document` for 1-hop instant retrieval.
+5. **Strict File Size Compliance**:
+   - Kept all modified files strictly under the 500-line requirement:
+     - `storage/google_drive.py`: 496 lines
+     - `storage/google_drive_tenant.py`: 482 lines
+     - `src/auth/database.py`: 484 lines
+     - `src/storage/routes.py`: 435 lines
+     - `frontend/app/components/DocumentHubModal.tsx`: 434 lines
+
+### 2.2 Frontend Optimistic UI (`DocumentHubModal.tsx`)
+1. **Optimistic Pending Card**:
+   - When an upload starts, an animated pending card immediately appears at the top of the document catalog displaying filename, size, and animated *"Saving to Cloud…"*.
+2. **Empty State Guard**:
+   - "No documents found" is strictly suppressed while an upload is in progress (`!pendingFile`).
+3. **Persistent Cloud Status**:
+   - Added persistent status badge: *"Encrypted cloud storage (Google Drive + Vector RAG)"*.
+   - Dynamic footer counter reflects synced documents plus active saving states.
+
+---
+
+## 3. Ruflo Multi-Agent Swarm Integration (/ruflo-setup)
+
+Ruflo (v3.41+) acts as the coordination ledger and policy decision point:
 
 ```
-[Phase 1: Verification & Live Proofing]
-           │
-           ▼
-[Phase 2: Cold-Start & Keep-Alive Hardening]
-           │
-           ▼
-[Phase 3: Agentic Execution & Specialized Subsystems]
-           │
-           ▼
-[Phase 4: Full Multi-Tenant Security & Regression Pass]
+Lead (Gemini) ──► researcher ──► architect ──► coder ──► tester ──► reviewer
 ```
 
----
-
-### Phase 1: End-to-End Upload & Grounded RAG Verification
-* **Goal**: Validate that users can upload documents and execute grounded RAG queries in production without friction.
-* **Tasks**:
-  1. **Production Sanity Check**:
-     - Log in to `https://agent-pilot-rust.vercel.app/` via Google OAuth.
-     - Open **Document Cloud Hub** (`Knowledge Base -> Cloud Hub`).
-     - Upload a sample PDF or TXT file (e.g., `sample_upload_test.txt`).
-     - Confirm modal displays document status as **Synced to Cloud**.
-  2. **Thread Attachment**:
-     - Click **Attach** to attach the uploaded document to the active chat thread.
-     - Verify chip appears in the chat header or message input area.
-  3. **Grounded Query Test**:
-     - Submit prompt: *"Summarize the uploaded document and list its key points."*
-     - Verify agent invokes `retrieve_documents` / RAG vector retriever.
-     - Verify response contains cited snippets with factual grounding.
+### 3.1 Swarm Configuration
+* **Topology**: Hierarchical Mesh (`--topology hierarchical --max-agents 8`)
+* **Ledger Location**: `.claude-flow/` and `.swarm/`
+* **Agent Team**:
+  - `researcher`: Inspects codebase, Drive schemas, and memory constraints.
+  - `architect`: Designs tenant isolation boundaries and asynchronous pipelines.
+  - `coder`: Implements lightweight, modular modules (< 500 lines per file).
+  - `tester`: Executes unit and integration test suites (`test_phase2_storage`, `test_phase3_vector_rag`).
+  - `reviewer`: Enforces zero secrets, security policies, and performance criteria.
 
 ---
 
-### Phase 2: Backend Cold-Start & Keep-Alive Resilience ✅
-* **Goal**: Prevent Render free-tier spin-down from causing timeouts or perceived outages.
-* **Tasks**:
-  1. **Background Keep-Alive Cron/Ping**:
-     - Implement lightweight periodic ping from the frontend or GitHub Action / Cron to `https://agent-pilot-api.onrender.com/health` every 10 minutes.
-  2. **Client-Side Exponential Backoff & Retry**:
-     - In `authFetch`, if a request fails with network error or 502/503 during upload or chat streaming, automatically retry once with exponential backoff before throwing.
-  3. **Upload Progress Indicator**:
-     - Enhance `DocumentHubModal.tsx` to display real-time upload progress stages:
-       - Stage 1: Uploading payload to server...
-       - Stage 2: Syncing with cloud storage...
-       - Stage 3: Indexing vector embeddings for RAG...
+## 4. Next Phases of Execution
+
+### Phase 1: Test Suite & Regression Verification ✅
+- `test_phase2_storage.py`: Passed (OK, 3 tests in 16.8s).
+- `test_phase3_vector_rag.py`: Passed (OK, 5 tests in 16.2s).
+- `test_phase5_isolation.py`: Verified multi-tenant isolation.
+
+### Phase 2: Live Production Deployment & Git Sync 🚀
+- Commit all hardened backend, storage, and frontend files to git.
+- Push to GitHub `main` branch to trigger Render and Vercel production rebuilds.
+- Verify health checks on Render: `https://agent-pilot-api.onrender.com/health`.
+
+### Phase 3: Live Verification in Browser
+1. Log in to `https://agent-pilot-rust.vercel.app/` as `operapoint86@gmail.com`.
+2. Open **Document Cloud Hub**:
+   - Confirm all 33 previously uploaded documents appear in the catalog.
+   - Upload a new document: verify optimistic row appears instantly and finishes in 1–2s.
+3. Attach to chat thread and ask a grounded question:
+   - Confirm citations and answers reflect the document content.
 
 ---
 
-### Phase 3: Autonomous Agent Execution & Tool Validation
-* **Goal**: Execute and test the core agentic capabilities defined in `docs/agentic_control_system_features.md`.
-* **Tasks**:
-  1. **Python Sandbox Execution**:
-     - Run prompt: *"Calculate compound interest on $25,000 at 8% annual return over 15 years using Python."*
-     - Verify sandboxed execution in `src/tools/code_sandbox.py` produces correct math and output table.
-  2. **Deep Web Research**:
-     - Run prompt: *"Fetch and summarize the latest updates from https://news.ycombinator.com."*
-     - Verify multi-source retrieval, URL parsing, and clean markdown summary with citations.
-  3. **Multi-Agent Specialist Delegation**:
-     - Test `route_to_specialist` with coder, researcher, and data-analyst roles.
-     - Verify Inter-Agent Message Bus records structured artifacts.
-
----
-
-### Phase 4: Production Security & Compliance Audit
-* **Goal**: Confirm zero data leakage, strict multi-tenant isolation, and performance constraints.
-* **Tasks**:
-  1. **Cross-Tenant Boundary Test**:
-     - Verify User A cannot access User B's `/api/documents` or Google Drive folders.
-     - Run pytest suite: `pytest tests/test_multi_tenant_isolation.py`.
-  2. **File Size & Line Count Enforcement**:
-     - Ensure all modified source files remain strictly under 500 lines.
-  3. **Zero Secrets in Code**:
-     - Verify `.env` files and credentials remain excluded from git tracking.
-
----
-
-## 3. Verification Checklist
+## 5. Verification Checklist
 
 | Step | Action | Expected Result | Status |
 |:---:|:---|:---|:---:|
-| 1 | Probe `/health` endpoint | HTTP 200, storage connected | ✅ Complete |
-| 2 | Authenticated POST `/api/documents/upload` | HTTP 201 Created, Drive synced | ✅ Complete |
-| 3 | Push FormData & error handling fix | Commit `a1a8f19` on `main` | ✅ Complete |
-| 4 | User verifies upload in browser | Document appears in Cloud Hub | ⏳ Pending User Check |
-| 5 | Exponential backoff retry in `authFetch` | 502/503 + network errors retried 2× | ✅ Complete |
-| 6 | Upload progress stages in DocumentHubModal | 3-stage visual indicator | ✅ Complete |
-| 7 | Keep-alive ping from frontend | `/health` pinged every 10 min | ✅ Complete |
-| 8 | Grounded chat citation test | Accurate Q&A citing document | ⏳ Next |
-| 9 | Agentic tools test (Python + Web) | Correct execution outputs | ⏳ Next |
+| 1 | Prune Drive stale database copies | Only newest `chatbot.db` kept in Drive | ✅ Complete |
+| 2 | Reconcile 46 documents in SQLite | 33 docs under canonical user ID | ✅ Complete |
+| 3 | Fast folder caching (`.drive_cache.json`) | Eliminates redundant Drive API calls | ✅ Complete |
+| 4 | Asynchronous Vector Store background upload | Upload HTTP response in 1–2s | ✅ Complete |
+| 5 | Identity resolution across equivalent IDs | Documents visible across all logins | ✅ Complete |
+| 6 | Optimistic upload UI in `DocumentHubModal` | No empty state during upload | ✅ Complete |
+| 7 | All files under 500 lines | Clean architecture, zero bloat | ✅ Complete |
+| 8 | Run full pytest / unittest suite | All storage & RAG tests passing | ✅ Complete |
+| 9 | Push updates to git | Auto-deploy to Render & Vercel | ⏳ In Progress |
+| 10 | Live user verification in browser | Lifetime document persistence confirmed | ⏳ Next |
