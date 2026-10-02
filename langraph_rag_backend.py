@@ -420,6 +420,12 @@ def thread_has_document(thread_id: str) -> bool:
     tid = str(thread_id)
     if multi_doc_manager.has_documents(tid) or tid in _THREAD_RETRIEVERS:
         return True
+    try:
+        from src.auth.database import get_thread_active_document
+        if get_thread_active_document(tid):
+            return True
+    except Exception:
+        pass
     if storage.enabled:
         meta = storage.load_document_metadata(tid)
         if meta:

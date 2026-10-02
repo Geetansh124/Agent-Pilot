@@ -132,7 +132,13 @@ export default function DocumentHubModal({
       });
 
       if (res.ok) {
-        onDocumentAttached(doc);
+        const attachData = await res.json().catch(() => ({}));
+        const resolvedDoc: StoredDocument = {
+          ...doc,
+          chunks_count: attachData.chunks_count || doc.chunks_count || 0,
+          chunks: attachData.chunks || attachData.chunks_count || doc.chunks || 0,
+        };
+        onDocumentAttached(resolvedDoc);
         onClose();
       } else {
         const errData = await res.json().catch(() => ({}));

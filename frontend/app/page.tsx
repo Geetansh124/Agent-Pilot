@@ -96,7 +96,14 @@ export default function Home() {
         const res = await authFetch(`${API}/api/threads/${thread.id}/document`);
         if (res.ok) {
           const data = await res.json();
-          setDocument(data.attached ? data.document : null);
+          if (data.attached && data.document) {
+            setDocument({
+              ...data.document,
+              chunks: data.document.chunks_count || data.document.chunks || 0,
+            });
+          } else {
+            setDocument(null);
+          }
         }
       } catch { /* best-effort */ }
     }
@@ -144,10 +151,11 @@ export default function Home() {
     const timeout = setTimeout(() => controller.abort(), 120_000);
 
     try {
+      const docId = (document?.id || document?.doc_id) as string | undefined;
       const response = await authFetch(`${API}/api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, thread_id: threadId }),
+        body: JSON.stringify({ message: text, thread_id: threadId, doc_id: docId }),
         signal: controller.signal,
       });
 
@@ -449,8 +457,12 @@ export default function Home() {
         isOpen={documentHubOpen}
         onClose={() => setDocumentHubOpen(false)}
         activeThreadId={threadId}
-        activeDocumentId={document?.id as string}
-        onDocumentAttached={(doc: StoredDocument) => setDocument(doc)}
+        onDocumentAttached={(doc: StoredDocument) =>
+          setDocument({
+            ...doc,
+            chunks: doc.chunks_count || doc.chunks || 0,
+          })
+        }
       />
     </main>
   );

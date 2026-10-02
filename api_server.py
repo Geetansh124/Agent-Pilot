@@ -74,6 +74,7 @@ def _check_rate_limit(client_ip: str) -> None:
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=10000)
     thread_id: str = Field(min_length=1, max_length=100)
+    doc_id: str | None = Field(default=None, max_length=100)
     response_format: str | None = Field(default=None, max_length=20)
 
 
@@ -136,12 +137,10 @@ def startup_storage_restore() -> None:
             count = storage.reconcile_documents_from_drive()
             if count:
                 logger.info("Startup reconciliation restored %d document records from Google Drive.", count)
-                # Persist the reconciled database back to Drive immediately
                 if hasattr(storage, "sync_database"):
                     storage.sync_database("chatbot.db")
     except Exception as exc:
         logger.warning("Startup document reconciliation warning: %s", exc)
-
 
 @app.on_event("shutdown")
 def shutdown_storage_sync() -> None:
@@ -154,10 +153,6 @@ def shutdown_storage_sync() -> None:
     except Exception as exc:
         logger.warning("Shutdown storage sync encountered warning: %s", exc)
 
-
-# ---------------------------------------------------------------------------
-# Health
-# ---------------------------------------------------------------------------
 @app.get("/health")
 def health() -> dict[str, Any]:
     storage_status = "disabled"
@@ -269,13 +264,10 @@ def update_thread(thread_id: str, body: UpdateThreadRequest, user: dict[str, Any
     _ensure_thread_registered(thread_id, user_id, clean_title)
     if set_thread_title(thread_id, clean_title):
         if hasattr(storage, "sync_database"):
-            try:
-                storage.sync_database("chatbot.db")
-            except Exception:
-                pass
+            try: storage.sync_database("chatbot.db")
+            except Exception: pass
         return {"id": thread_id, "title": clean_title}
     raise HTTPException(status_code=500, detail="Failed to update thread title.")
-
 
 @app.delete("/api/threads/{thread_id}")
 def remove_thread(thread_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
@@ -290,10 +282,8 @@ def remove_thread(thread_id: str, user: dict[str, Any] = Depends(get_current_use
         pass
     if delete_thread(thread_id):
         if hasattr(storage, "sync_database"):
-            try:
-                storage.sync_database("chatbot.db")
-            except Exception:
-                pass
+            try: storage.sync_database("chatbot.db")
+            except Exception: pass
         return {"deleted": True, "thread_id": thread_id}
     raise HTTPException(status_code=404, detail="Thread not found or already deleted.")
 
@@ -312,6 +302,12 @@ def chat(
     if not _user_owns_thread(request.thread_id, user_id, user.get("role", "user")):
         raise HTTPException(status_code=403, detail="Access denied to this conversation thread.")
     _ensure_thread_registered(request.thread_id, user_id, request.message[:48].strip())
+    if request.doc_id:
+        try:
+            from src.auth.database import attach_document_to_thread
+            attach_document_to_thread(request.thread_id, request.doc_id, user_id)
+        except Exception:
+            pass
     _check_rate_limit(req.client.host if req.client else "unknown")
     is_safe, reason = validate_input_prompt(request.message)
     if not is_safe:
@@ -378,6 +374,12 @@ def chat_stream(
     if not _user_owns_thread(request.thread_id, user_id, user.get("role", "user")):
         raise HTTPException(status_code=403, detail="Access denied to this conversation thread.")
     _ensure_thread_registered(request.thread_id, user_id, request.message[:48].strip())
+    if request.doc_id:
+        try:
+            from src.auth.database import attach_document_to_thread
+            attach_document_to_thread(request.thread_id, request.doc_id, user_id)
+        except Exception:
+            pass
     prompt_toks = estimate_token_count(request.message)
     budget_ok, budget_err = cost_tracker.check_request_budget(prompt_toks)
     if not budget_ok:

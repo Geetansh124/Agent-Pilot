@@ -182,7 +182,8 @@ async def _process_document_upload(
         docs = load_document_from_bytes(file_bytes, filename)
         if docs:
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-            chunks = splitter.split_documents(docs)
+            all_chunks = splitter.split_documents(docs)
+            chunks = all_chunks[:40]
             for idx, chunk in enumerate(chunks):
                 chunk.metadata["doc_id"] = doc_id
                 chunk.metadata["filename"] = filename
@@ -386,9 +387,19 @@ def attach_document_to_thread_endpoint(
                     logger.warning("Failed loading persisted vector store for doc %s: %s", doc_id, exc)
 
         if vector_store is None:
-            raw_bytes = storage.load_user_document_bytes(user_id=owner_uid, doc_id=doc_id, filename=doc["filename"])
+            raw_bytes = storage.load_user_document_bytes(
+                user_id=owner_uid,
+                doc_id=doc_id,
+                filename=doc["filename"],
+                drive_file_id=doc.get("drive_file_id"),
+            )
             if not raw_bytes and owner_uid != user_id:
-                raw_bytes = storage.load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])
+                raw_bytes = storage.load_user_document_bytes(
+                    user_id=user_id,
+                    doc_id=doc_id,
+                    filename=doc["filename"],
+                    drive_file_id=doc.get("drive_file_id"),
+                )
             if raw_bytes:
                 from langchain_community.vectorstores import FAISS
                 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -412,6 +423,13 @@ def attach_document_to_thread_endpoint(
                             storage.save_user_vector_store(user_id=owner_uid, doc_id=doc_id, vector_store=vector_store)
                     except Exception as exc:
                         logger.warning("Failed re-persisting vector store: %s", exc)
+                    try:
+                        from src.auth.database import get_db_connection
+                        with get_db_connection() as conn:
+                            conn.cursor().execute("UPDATE documents SET chunks_count = ? WHERE id = ?", (len(chunks), doc_id))
+                            conn.commit()
+                    except Exception:
+                        pass
 
         if vector_store:
             multi_doc_manager.attach_document(
@@ -424,12 +442,14 @@ def attach_document_to_thread_endpoint(
     except Exception as exc:
         logger.warning("Vector store warm-up warning during attach for doc %s: %s", doc_id, exc)
 
+    resolved_chunks = len(chunks) if chunks else doc.get("chunks_count", 0)
     return {
         "status": "attached",
         "thread_id": thread_id,
         "doc_id": doc_id,
         "filename": doc["filename"],
-        "chunks_count": doc.get("chunks_count", 0),
+        "chunks_count": resolved_chunks,
+        "chunks": resolved_chunks,
     }
 
 

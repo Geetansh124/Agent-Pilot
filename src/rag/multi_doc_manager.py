@@ -85,11 +85,52 @@ class MultiDocManager:
             if active_doc and storage_backend:
                 uid = active_doc["user_id"]
                 did = active_doc["doc_id"]
+                store = None
+                chunks = None
                 if hasattr(storage_backend, "has_user_vector_store") and storage_backend.has_user_vector_store(uid, did):
-                    store = storage_backend.load_user_vector_store(uid, did, embeddings)
-                    if store:
-                        self.attach_document(tid, did, active_doc["filename"], store)
-                        return self._thread_retrievers.get(tid)
+                    try:
+                        store = storage_backend.load_user_vector_store(uid, did, embeddings)
+                    except Exception:
+                        store = None
+
+                # On-demand fallback: rebuild vector store from persistent document bytes if not yet indexed
+                if store is None and hasattr(storage_backend, "load_user_document_bytes"):
+                    try:
+                        raw_bytes = storage_backend.load_user_document_bytes(
+                            user_id=uid,
+                            doc_id=did,
+                            filename=active_doc["filename"],
+                            drive_file_id=active_doc.get("drive_file_id"),
+                        )
+                        if raw_bytes:
+                            docs = load_document_from_bytes(raw_bytes, active_doc["filename"])
+                            if docs:
+                                splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                                all_chunks = splitter.split_documents(docs)
+                                chunks = all_chunks[:40]
+                                for idx, chunk in enumerate(chunks):
+                                    chunk.metadata["doc_id"] = did
+                                    chunk.metadata["filename"] = active_doc["filename"]
+                                    chunk.metadata["chunk_index"] = idx
+                                store = FAISS.from_documents(chunks, embeddings)
+                                if hasattr(storage_backend, "save_user_vector_store"):
+                                    storage_backend.save_user_vector_store(uid, did, store)
+                                try:
+                                    from src.auth.database import get_db_connection
+                                    with get_db_connection() as conn:
+                                        conn.cursor().execute(
+                                            "UPDATE documents SET chunks_count = ? WHERE id = ?",
+                                            (len(chunks), did),
+                                        )
+                                        conn.commit()
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                if store:
+                    self.attach_document(tid, did, active_doc["filename"], store, chunks=chunks)
+                    return self._thread_retrievers.get(tid)
         except Exception:
             pass
 
