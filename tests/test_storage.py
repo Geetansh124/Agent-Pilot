@@ -12,6 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -329,6 +330,64 @@ class TestGoogleDriveMockedAPI(unittest.TestCase):
             filename="report.pdf",
         )
         self.assertTrue(del_res)
+
+
+class TestStorageExtensions(unittest.TestCase):
+    """Test extended storage capabilities: snapshots, summaries, artifacts, audit logs, knowledge graph."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp(prefix="agent_pilot_ext_test_")
+        self.storage = LocalStorageBackend(base_dir=self.temp_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_rolling_database_snapshot(self):
+        db_path = os.path.join(self.temp_dir, "test.db")
+        with open(db_path, "wb") as f:
+            f.write(b"SQLITE_TEST_CONTENT")
+        synced = self.storage.sync_database(db_path, daily_snapshot=True)
+        self.assertTrue(synced)
+        snapshots = self.storage.list_database_snapshots()
+        self.assertGreaterEqual(len(snapshots), 1)
+        self.assertTrue(any("test_" in s["name"] for s in snapshots))
+
+    def test_document_summary_lifecycle(self):
+        summary = {"title": "Q3 Report", "pages": 12, "topics": ["sales", "growth"]}
+        saved = self.storage.save_document_summary("user_alpha", "doc_101", summary)
+        self.assertTrue(saved)
+        loaded = self.storage.load_document_summary("user_alpha", "doc_101")
+        self.assertEqual(loaded, summary)
+
+    def test_user_artifact_lifecycle(self):
+        chart_data = b"MOCK_PNG_DATA"
+        res = self.storage.save_user_artifact("user_beta", "chart.png", chart_data, mime_type="image/png")
+        self.assertTrue(res.get("success"))
+        loaded = self.storage.load_user_artifact("user_beta", "chart.png")
+        self.assertEqual(loaded, chart_data)
+        artifacts = self.storage.list_user_artifacts("user_beta")
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["name"], "chart.png")
+
+    def test_audit_logs_sync(self):
+        import sqlite3
+        db_path = os.path.join(self.temp_dir, "test_audit.db")
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("CREATE TABLE audit_logs (id INTEGER PRIMARY KEY, action TEXT, resource TEXT, user_id TEXT, status TEXT, timestamp TEXT, details TEXT)")
+            conn.execute("INSERT INTO audit_logs (action, resource, user_id, status, timestamp, details) VALUES ('test_action', 'res1', 'u1', 'success', '2026-10-02T10:00:00', '{}')")
+        synced = self.storage.sync_audit_logs(db_path)
+        self.assertTrue(synced)
+        exported = self.storage.download_bytes("exports", "audit", "audit_export.json")
+        self.assertIsNotNone(exported)
+        data = json.loads(exported.decode("utf-8"))
+        self.assertEqual(data["count"], 1)
+
+    def test_knowledge_graph_lifecycle(self):
+        graph = {"nodes": [{"id": "doc_1"}, {"id": "doc_2"}], "edges": [{"source": "doc_1", "target": "doc_2"}]}
+        saved = self.storage.save_knowledge_graph(graph, scope="system")
+        self.assertTrue(saved)
+        loaded = self.storage.load_knowledge_graph(scope="system")
+        self.assertEqual(loaded, graph)
 
 
 if __name__ == "__main__":

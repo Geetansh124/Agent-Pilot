@@ -23,12 +23,13 @@ from storage.base import (
     sanitize_thread_id,
 )
 from storage.google_drive_tenant import GoogleDriveTenantMixin
+from storage.google_drive_artifacts import GoogleDriveArtifactsMixin
 
 logger = logging.getLogger("storage.google_drive")
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
-class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
+class GoogleDriveStorage(GoogleDriveTenantMixin, GoogleDriveArtifactsMixin, StorageBackend):
     """Google Drive storage backend implementing the StorageBackend interface."""
 
     def __init__(self, service_account_json: Optional[str | dict] = None, root_folder_id: Optional[str] = None, **kwargs: Any) -> None:
@@ -482,11 +483,7 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, StorageBackend):
         try:
             root_id = self._root_folder_id or self._get_root_id()
             if root_id:
-                res = self._service.files().get(
-                    fileId=root_id,
-                    fields="id, name, trashed",
-                    supportsAllDrives=True,
-                ).execute()
+                res = self._service.files().get(fileId=root_id, fields="id, name, trashed", supportsAllDrives=True).execute()
                 return bool(res and res.get("id"))
             about = self._service.about().get(fields="user(emailAddress, displayName)").execute()
             return bool(about and "user" in about)

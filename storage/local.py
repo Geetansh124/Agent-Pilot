@@ -286,16 +286,26 @@ class LocalStorageBackend(StorageBackend):
             logger.warning("Local health check failed: %s", exc)
             return False
 
-    def sync_database(self, db_path: str = "chatbot.db") -> bool:
-        """Backup local database file under database/system/ in storage."""
+    def sync_database(self, db_path: str = "chatbot.db", daily_snapshot: bool = True) -> bool:
+        """Backup local database file under database/system/ in storage and rolling daily snapshots."""
         p = Path(db_path)
         if not p.exists():
             return False
         try:
-            return bool(self.upload_bytes("database", "system", p.name, p.read_bytes()).get("success"))
+            data = p.read_bytes()
+            res = self.upload_bytes("database", "system", p.name, data)
+            if daily_snapshot and res.get("success"):
+                from datetime import datetime
+                snap_name = f"{p.stem}_{datetime.now().strftime('%Y-%m-%d')}{p.suffix}"
+                self.upload_bytes("database", "snapshots", snap_name, data)
+            return bool(res.get("success"))
         except Exception as exc:
             logger.warning("Local sync database failed: %s", exc)
             return False
+
+    def list_database_snapshots(self) -> list[dict[str, Any]]:
+        """List historical database snapshots from database/snapshots/."""
+        return self.list_files(category="database", thread_id="snapshots")
 
     def restore_database(self, db_path: str = "chatbot.db") -> bool:
         """Restore local database file from database/system/ in storage."""
@@ -317,86 +327,38 @@ class LocalStorageBackend(StorageBackend):
     def restore_memory(self, memory_path: str = "memory.db") -> bool:
         return self.restore_database(memory_path)
 
+    def _user_dir(self, user_id: str, subcat: str, item_id: str = "") -> Path:
+        """Resolve sandboxed user subfolder workspaces_storage/users/{user_id}/{subcat}/[item_id]."""
+        p = self.base_dir / "users" / sanitize_thread_id(user_id) / subcat
+        if item_id:
+            p = p / sanitize_thread_id(item_id)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
     def save_user_document(
-        self,
-        user_id: str,
-        doc_id: str,
-        filename: str,
-        file_bytes: bytes,
-        mime_type: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        self, user_id: str, doc_id: str, filename: str, file_bytes: bytes,
+        mime_type: Optional[str] = None, metadata: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """Save a user-scoped document in workspaces_storage/users/{user_id}/documents/{doc_id}/."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
+        doc_dir = self._user_dir(user_id, "documents", doc_id)
         clean_fn = Path(filename).name
-
-        doc_dir = self.base_dir / "users" / clean_uid / "documents" / clean_did
-        doc_dir.mkdir(parents=True, exist_ok=True)
-
         target_file = doc_dir / clean_fn
         target_file.write_bytes(file_bytes)
-
-        meta_payload = {
-            "doc_id": doc_id,
-            "user_id": user_id,
-            "filename": clean_fn,
-            "size_bytes": len(file_bytes),
-            "mime_type": mime_type or guess_mime_type(clean_fn),
-            **(metadata or {}),
-        }
+        mime = mime_type or guess_mime_type(clean_fn)
+        meta_payload = {"doc_id": doc_id, "user_id": user_id, "filename": clean_fn, "size_bytes": len(file_bytes), "mime_type": mime, **(metadata or {})}
         (doc_dir / "metadata.json").write_text(json.dumps(meta_payload, indent=2), encoding="utf-8")
+        return {"doc_id": doc_id, "user_id": user_id, "filename": clean_fn, "file_id": str(target_file), "drive_file_id": str(target_file), "drive_folder_id": str(doc_dir), "size_bytes": len(file_bytes), "mime_type": mime, "success": True}
 
-        return {
-            "doc_id": doc_id,
-            "user_id": user_id,
-            "filename": clean_fn,
-            "file_id": str(target_file),
-            "drive_file_id": str(target_file),
-            "web_view_link": None,
-            "drive_folder_id": str(doc_dir),
-            "size_bytes": len(file_bytes),
-            "mime_type": mime_type or guess_mime_type(clean_fn),
-            "success": True,
-        }
+    def load_user_document_bytes(self, user_id: str, doc_id: str, filename: str, **kwargs: Any) -> Optional[bytes]:
+        target = self._user_dir(user_id, "documents", doc_id) / Path(filename).name
+        return target.read_bytes() if target.exists() else None
 
-    def load_user_document_bytes(
-        self,
-        user_id: str,
-        doc_id: str,
-        filename: str,
-        **kwargs: Any,
-    ) -> Optional[bytes]:
-        """Load document raw bytes for a user."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        target = self.base_dir / "users" / clean_uid / "documents" / clean_did / Path(filename).name
-        if target.exists():
-            return target.read_bytes()
-        return None
-
-    def has_user_document(
-        self,
-        user_id: str,
-        doc_id: str,
-        filename: str,
-    ) -> bool:
-        """Check whether user document exists under users/{user_id}/documents/{doc_id}/{filename}."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        target = self.base_dir / "users" / clean_uid / "documents" / clean_did / Path(filename).name
+    def has_user_document(self, user_id: str, doc_id: str, filename: str) -> bool:
+        target = self._user_dir(user_id, "documents", doc_id) / Path(filename).name
         return target.exists() and target.is_file()
 
-    def delete_user_document(
-        self,
-        user_id: str,
-        doc_id: str,
-        filename: Optional[str] = None,
-    ) -> bool:
-        """Delete user document directory and all files."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        doc_dir = self.base_dir / "users" / clean_uid / "documents" / clean_did
+    def delete_user_document(self, user_id: str, doc_id: str, filename: Optional[str] = None) -> bool:
+        doc_dir = self._user_dir(user_id, "documents", doc_id)
         if not doc_dir.exists():
             return True
         try:
@@ -408,13 +370,9 @@ class LocalStorageBackend(StorageBackend):
             return False
 
     def save_user_vector_store(self, user_id: str, doc_id: str, vector_store: Any) -> bool:
-        """Persist FAISS index under workspaces_storage/users/{user_id}/vectors/{doc_id}/."""
         if vector_store is None:
             return False
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        vec_dir = self.base_dir / "users" / clean_uid / "vectors" / clean_did
-        vec_dir.mkdir(parents=True, exist_ok=True)
+        vec_dir = self._user_dir(user_id, "vectors", doc_id)
         try:
             vector_store.save_local(str(vec_dir))
             return True
@@ -423,10 +381,7 @@ class LocalStorageBackend(StorageBackend):
             return False
 
     def load_user_vector_store(self, user_id: str, doc_id: str, embeddings: Any) -> Optional[Any]:
-        """Load FAISS index from workspaces_storage/users/{user_id}/vectors/{doc_id}/."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        vec_dir = self.base_dir / "users" / clean_uid / "vectors" / clean_did
+        vec_dir = self._user_dir(user_id, "vectors", doc_id)
         if not ((vec_dir / "index.faiss").exists() and (vec_dir / "index.pkl").exists()):
             return None
         try:
@@ -437,9 +392,91 @@ class LocalStorageBackend(StorageBackend):
             return None
 
     def has_user_vector_store(self, user_id: str, doc_id: str) -> bool:
-        """Check whether vector store exists under users/{user_id}/vectors/{doc_id}/."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        vec_dir = self.base_dir / "users" / clean_uid / "vectors" / clean_did
+        vec_dir = self._user_dir(user_id, "vectors", doc_id)
         return (vec_dir / "index.faiss").exists() and (vec_dir / "index.pkl").exists()
+
+    def save_document_summary(self, user_id: str, doc_id: str, summary_data: dict[str, Any]) -> bool:
+        """Cache pre-computed document summary locally."""
+        try:
+            doc_dir = self._user_dir(user_id, "documents", doc_id)
+            (doc_dir / "summary.json").write_text(json.dumps(summary_data, indent=2), encoding="utf-8")
+            return True
+        except Exception as exc:
+            logger.warning("Local save document summary failed: %s", exc)
+            return False
+
+    def load_document_summary(self, user_id: str, doc_id: str) -> Optional[dict[str, Any]]:
+        """Load pre-computed document summary from local storage."""
+        target = self._user_dir(user_id, "documents", doc_id) / "summary.json"
+        if not target.exists():
+            return None
+        try:
+            return json.loads(target.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def save_user_artifact(
+        self, user_id: str, artifact_name: str, content: bytes | str,
+        mime_type: Optional[str] = None, metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Save agent-generated code/report/chart artifact to users/{user_id}/artifacts/."""
+        art_dir = self._user_dir(user_id, "artifacts")
+        clean_fn = Path(artifact_name).name
+        target = art_dir / clean_fn
+        raw = content.encode("utf-8") if isinstance(content, str) else content
+        target.write_bytes(raw)
+        mime = mime_type or guess_mime_type(clean_fn)
+        return {"user_id": user_id, "artifact_name": clean_fn, "file_id": str(target), "size_bytes": len(raw), "mime_type": mime, "metadata": metadata or {}, "success": True}
+
+    def load_user_artifact(self, user_id: str, artifact_name: str) -> Optional[bytes]:
+        """Load agent artifact bytes from local storage."""
+        target = self._user_dir(user_id, "artifacts") / Path(artifact_name).name
+        return target.read_bytes() if target.exists() else None
+
+    def list_user_artifacts(self, user_id: str) -> list[dict[str, Any]]:
+        """List all artifacts generated for the user."""
+        art_dir = self._user_dir(user_id, "artifacts")
+        results = []
+        for p in art_dir.iterdir():
+            if p.is_file():
+                results.append({"name": p.name, "file_id": str(p), "size_bytes": p.stat().st_size, "mime_type": guess_mime_type(p.name), "modified": p.stat().st_mtime})
+        return results
+
+    def sync_audit_logs(self, db_path: str = "chatbot.db", limit: int = 500) -> bool:
+        """Export latest audit log records from SQLite to exports/audit/audit_export.json."""
+        p = Path(db_path)
+        if not p.exists():
+            return False
+        try:
+            import sqlite3
+            with sqlite3.connect(str(p)) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?", (limit,))
+                rows = [dict(r) for r in cursor.fetchall()]
+            from datetime import datetime
+            payload = json.dumps({"exported_at": datetime.now().isoformat(), "count": len(rows), "records": rows}, indent=2).encode("utf-8")
+            res = self.upload_bytes("exports", "audit", "audit_export.json", payload, mime_type="application/json")
+            return bool(res.get("success"))
+        except Exception as exc:
+            logger.warning("Local sync audit logs failed: %s", exc)
+            return False
+
+    def save_knowledge_graph(self, graph_data: dict[str, Any], scope: str = "system") -> bool:
+        """Persist cross-document knowledge graph state."""
+        try:
+            payload = json.dumps(graph_data, indent=2).encode("utf-8")
+            res = self.upload_bytes("database", scope, "knowledge_graph.json", payload, mime_type="application/json")
+            return bool(res.get("success"))
+        except Exception as exc:
+            logger.warning("Local save knowledge graph failed: %s", exc)
+            return False
+
+    def load_knowledge_graph(self, scope: str = "system") -> Optional[dict[str, Any]]:
+        """Load cross-document knowledge graph state."""
+        try:
+            data = self.download_bytes("database", scope, "knowledge_graph.json")
+            return json.loads(data.decode("utf-8")) if data else None
+        except Exception as exc:
+            logger.warning("Local load knowledge graph failed: %s", exc)
+            return None
 

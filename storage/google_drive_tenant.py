@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -79,8 +80,8 @@ class GoogleDriveTenantMixin:
         """Check if vector store exists for thread in Google Drive."""
         return bool(self._enabled and self.find_file("vectors", thread_id, "index.faiss") is not None)
 
-    def sync_database(self, db_path: str = "chatbot.db") -> bool:
-        """Safely snapshot and upload SQLite database file to Google Drive under database/system/."""
+    def sync_database(self, db_path: str = "chatbot.db", daily_snapshot: bool = True) -> bool:
+        """Safely snapshot and upload SQLite database file to Google Drive under database/system/ and snapshots/."""
         if not self._enabled:
             return False
         p = Path(db_path)
@@ -106,10 +107,27 @@ class GoogleDriveTenantMixin:
 
             res = self.upload_bytes(category="database", thread_id="system", filename=p.name, file_bytes=data)
             logger.info("Synced database '%s' to Google Drive: %s", db_path, res.get("file_id"))
+            if daily_snapshot and res.get("success"):
+                try:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    snap_name = f"{p.stem}_{today}{p.suffix}"
+                    self.upload_bytes(category="database", thread_id="snapshots", filename=snap_name, file_bytes=data)
+                except Exception as snap_exc:
+                    logger.warning("Failed daily snapshot upload for %s: %s", p.name, snap_exc)
             return bool(res.get("success"))
         except Exception as exc:
             logger.warning("Failed to sync database '%s' to Google Drive: %s", db_path, exc)
             return False
+
+    def list_database_snapshots(self) -> list[dict[str, Any]]:
+        """List historical database snapshots from database/snapshots/ in Google Drive."""
+        if not self._enabled:
+            return []
+        try:
+            return self.list_files(category="database", thread_id="snapshots")
+        except Exception as exc:
+            logger.warning("Failed to list database snapshots from Google Drive: %s", exc)
+            return []
 
     def restore_database(self, db_path: str = "chatbot.db") -> bool:
         """Download latest SQLite database snapshot from Google Drive under database/system/."""
@@ -165,30 +183,48 @@ class GoogleDriveTenantMixin:
         """Restore long-term memory SQLite store from Google Drive."""
         return self.restore_database(memory_path)
 
-    def get_or_create_user_doc_folder(self, user_id: str, doc_id: str) -> str:
-        """Resolve or create Agent-Pilot/users/{user_id}/documents/{doc_id}/ folder in Google Drive."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        cache_key = f"user_doc/{clean_uid}/{clean_did}"
+    def _find_drive_file(self, parent_id: str, filename: str) -> Optional[dict[str, Any]]:
+        """Find a file by exact name inside parent folder."""
+        escaped = self._escape_query_str(Path(filename).name)
+        q = f"'{parent_id}' in parents and name = '{escaped}' and trashed = false"
+        res = self._service.files().list(q=q, spaces="drive", fields="files(id, name, size, mimeType, modifiedTime, webViewLink)", supportsAllDrives=True).execute()
+        files = res.get("files", [])
+        return files[0] if files else None
+
+    def _upload_or_update_file(self, parent_id: str, filename: str, media: Any) -> dict[str, Any]:
+        """Create or update file under parent_id."""
+        clean_fn = Path(filename).name
+        existing = self._find_drive_file(parent_id, clean_fn)
+        if existing:
+            return self._service.files().update(fileId=existing["id"], media_body=media, fields="id, name, size, mimeType, modifiedTime, webViewLink", supportsAllDrives=True).execute()
+        return self._service.files().create(body={"name": clean_fn, "parents": [parent_id]}, media_body=media, fields="id, name, size, mimeType, modifiedTime, webViewLink", supportsAllDrives=True).execute()
+
+    def get_user_scoped_folder(self, user_id: str, subcategory: str, item_id: str = "") -> str:
+        """Resolve or create Agent-Pilot/users/{user_id}/{subcategory}/[item_id]/ in Google Drive."""
+        clean_uid, clean_item = sanitize_thread_id(user_id), sanitize_thread_id(item_id) if item_id else ""
+        cache_key = f"user/{clean_uid}/{subcategory}/{clean_item}" if clean_item else f"user/{clean_uid}/{subcategory}"
         if cache_key in self._folder_cache:
             return self._folder_cache[cache_key]
-
         root_id = self._get_root_id()
-        users_folder_id = self.get_or_create_folder("users", root_id)
-        user_folder_id = self.get_or_create_folder(clean_uid, users_folder_id)
-        docs_folder_id = self.get_or_create_folder("documents", user_folder_id)
-        doc_folder_id = self.get_or_create_folder(clean_did, docs_folder_id)
-        self._folder_cache[cache_key] = doc_folder_id
-        return doc_folder_id
+        users_fid = self.get_or_create_folder("users", root_id)
+        user_fid = self.get_or_create_folder(clean_uid, users_fid)
+        sub_fid = self.get_or_create_folder(subcategory, user_fid)
+        target_fid = self.get_or_create_folder(clean_item, sub_fid) if clean_item else sub_fid
+        self._folder_cache[cache_key] = target_fid
+        return target_fid
+
+    def get_or_create_user_doc_folder(self, user_id: str, doc_id: str) -> str:
+        return self.get_user_scoped_folder(user_id, "documents", doc_id)
+
+    def get_or_create_user_vec_folder(self, user_id: str, doc_id: str) -> str:
+        return self.get_user_scoped_folder(user_id, "vectors", doc_id)
+
+    def get_user_artifact_folder(self, user_id: str) -> str:
+        return self.get_user_scoped_folder(user_id, "artifacts")
 
     def save_user_document(
-        self,
-        user_id: str,
-        doc_id: str,
-        filename: str,
-        file_bytes: bytes,
-        mime_type: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        self, user_id: str, doc_id: str, filename: str, file_bytes: bytes,
+        mime_type: Optional[str] = None, metadata: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """Save a user-scoped document under Agent-Pilot/users/{user_id}/documents/{doc_id}/."""
         from storage.local import LocalStorageBackend
@@ -199,85 +235,48 @@ class GoogleDriveTenantMixin:
             clean_fn = Path(filename).name
             doc_folder_id = self.get_or_create_user_doc_folder(user_id, doc_id)
             mime = mime_type or guess_mime_type(clean_fn)
-
             from googleapiclient.http import MediaIoBaseUpload
             media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime, resumable=len(file_bytes) > 5 * 1024 * 1024)
-            escaped_name = self._escape_query_str(clean_fn)
-            q = f"'{doc_folder_id}' in parents and name = '{escaped_name}' and trashed = false"
-            res = self._service.files().list(q=q, spaces="drive", fields="files(id, webViewLink)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            files = res.get("files", [])
-
-            if files:
-                item = self._service.files().update(fileId=files[0]["id"], media_body=media, fields="id, name, size, mimeType, modifiedTime, webViewLink", supportsAllDrives=True).execute()
-            else:
-                item = self._service.files().create(body={"name": clean_fn, "parents": [doc_folder_id]}, media_body=media, fields="id, name, size, mimeType, modifiedTime, webViewLink", supportsAllDrives=True).execute()
-
+            item = self._upload_or_update_file(doc_folder_id, clean_fn, media)
             meta_payload = {"doc_id": doc_id, "user_id": user_id, "filename": clean_fn, "size_bytes": len(file_bytes), "mime_type": mime, **(metadata or {})}
             meta_media = MediaIoBaseUpload(io.BytesIO(json.dumps(meta_payload, indent=2).encode("utf-8")), mimetype="application/json")
-            self._service.files().create(body={"name": "metadata.json", "parents": [doc_folder_id]}, media_body=meta_media, fields="id", supportsAllDrives=True).execute()
-
-            return {
-                "doc_id": doc_id,
-                "user_id": user_id,
-                "filename": clean_fn,
-                "file_id": item.get("id"),
-                "drive_file_id": item.get("id"),
-                "web_view_link": item.get("webViewLink"),
-                "drive_folder_id": doc_folder_id,
-                "size_bytes": len(file_bytes),
-                "mime_type": mime,
-                "success": True,
-            }
+            self._upload_or_update_file(doc_folder_id, "metadata.json", meta_media)
+            return {"doc_id": doc_id, "user_id": user_id, "filename": clean_fn, "file_id": item.get("id"), "drive_file_id": item.get("id"), "web_view_link": item.get("webViewLink"), "drive_folder_id": doc_folder_id, "size_bytes": len(file_bytes), "mime_type": mime, "success": True}
         except Exception as exc:
-            logger.warning("Google Drive save_user_document failed (%s), using local fallback: %s", type(exc).__name__, exc)
+            logger.warning("Google Drive save_user_document failed, using local: %s", exc)
             local_res["gdrive_fallback"] = True
             local_res["gdrive_error"] = str(exc)
             return local_res
 
-    def load_user_document_bytes(
-        self, user_id: str, doc_id: str, filename: str, drive_file_id: Optional[str] = None, **kwargs: Any
-    ) -> Optional[bytes]:
-        """Download raw bytes of a user document with local cache check and Google Drive fallback."""
+    def load_user_document_bytes(self, user_id: str, doc_id: str, filename: str, drive_file_id: Optional[str] = None, **kwargs: Any) -> Optional[bytes]:
         from storage.local import LocalStorageBackend
         local_bytes = LocalStorageBackend().load_user_document_bytes(user_id, doc_id, filename)
         if local_bytes:
             return local_bytes
         if not self._enabled:
             return None
-
-        # Direct Google Drive file ID download (1-hop instant retrieval)
         file_id = drive_file_id or kwargs.get("file_id")
         if file_id:
             try:
                 data = self._service.files().get_media(fileId=file_id, supportsAllDrives=True).execute()
                 if data:
-                    try:
-                        LocalStorageBackend().save_user_document(user_id, doc_id, filename, data)
-                    except Exception:
-                        pass
+                    try: LocalStorageBackend().save_user_document(user_id, doc_id, filename, data)
+                    except Exception: pass
                     return data
-            except Exception:
-                pass
-
+            except Exception: pass
         try:
             folder_id = self.get_or_create_user_doc_folder(user_id, doc_id)
-            escaped = self._escape_query_str(Path(filename).name)
-            q = f"'{folder_id}' in parents and name = '{escaped}' and trashed = false"
-            res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
-            files = res.get("files", [])
-            if files:
-                data = self._service.files().get_media(fileId=files[0]["id"], supportsAllDrives=True).execute()
-                try:
-                    LocalStorageBackend().save_user_document(user_id, doc_id, filename, data)
-                except Exception:
-                    pass
+            hit = self._find_drive_file(folder_id, filename)
+            if hit:
+                data = self._service.files().get_media(fileId=hit["id"], supportsAllDrives=True).execute()
+                try: LocalStorageBackend().save_user_document(user_id, doc_id, filename, data)
+                except Exception: pass
                 return data
         except Exception as exc:
-            logger.warning("Failed to load user document bytes from Google Drive: %s", exc)
+            logger.warning("Failed to load user document bytes from Drive: %s", exc)
         return None
 
     def has_user_document(self, user_id: str, doc_id: str, filename: str) -> bool:
-        """Check whether user document exists in local cache or Google Drive."""
         from storage.local import LocalStorageBackend
         if LocalStorageBackend().has_user_document(user_id, doc_id, filename):
             return True
@@ -285,15 +284,11 @@ class GoogleDriveTenantMixin:
             return False
         try:
             folder_id = self.get_or_create_user_doc_folder(user_id, doc_id)
-            escaped = self._escape_query_str(Path(filename).name)
-            q = f"'{folder_id}' in parents and name = '{escaped}' and trashed = false"
-            res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
-            return bool(res.get("files"))
+            return self._find_drive_file(folder_id, filename) is not None
         except Exception:
             return False
 
     def delete_user_document(self, user_id: str, doc_id: str, filename: Optional[str] = None) -> bool:
-        """Delete user document from both local storage and Google Drive."""
         from storage.local import LocalStorageBackend
         local_deleted = LocalStorageBackend().delete_user_document(user_id, doc_id, filename)
         if not self._enabled:
@@ -301,38 +296,19 @@ class GoogleDriveTenantMixin:
         try:
             doc_folder_id = self.get_or_create_user_doc_folder(user_id, doc_id)
             self._service.files().delete(fileId=doc_folder_id, supportsAllDrives=True).execute()
-            cache_key = f"user_doc/{sanitize_thread_id(user_id)}/{sanitize_thread_id(doc_id)}"
-            self._folder_cache.pop(cache_key, None)
+            self._folder_cache.pop(f"user/{sanitize_thread_id(user_id)}/documents/{sanitize_thread_id(doc_id)}", None)
             return True
         except Exception as exc:
-            logger.warning("Failed to delete user document folder from Google Drive: %s", exc)
+            logger.warning("Failed to delete user document from Drive: %s", exc)
             return local_deleted
 
-    def get_or_create_user_vec_folder(self, user_id: str, doc_id: str) -> str:
-        """Resolve or create Agent-Pilot/users/{user_id}/vectors/{doc_id}/ folder in Google Drive."""
-        clean_uid = sanitize_thread_id(user_id)
-        clean_did = sanitize_thread_id(doc_id)
-        cache_key = f"user_vec/{clean_uid}/{clean_did}"
-        if cache_key in self._folder_cache:
-            return self._folder_cache[cache_key]
-
-        root_id = self._get_root_id()
-        users_folder_id = self.get_or_create_folder("users", root_id)
-        user_folder_id = self.get_or_create_folder(clean_uid, users_folder_id)
-        vecs_folder_id = self.get_or_create_folder("vectors", user_folder_id)
-        doc_vec_folder_id = self.get_or_create_folder(clean_did, vecs_folder_id)
-        self._folder_cache[cache_key] = doc_vec_folder_id
-        return doc_vec_folder_id
-
     def save_user_vector_store(self, user_id: str, doc_id: str, vector_store: Any) -> bool:
-        """Persist FAISS index artifacts with local caching and Google Drive sync."""
         if vector_store is None:
             return False
         from storage.local import LocalStorageBackend
         local_saved = LocalStorageBackend().save_user_vector_store(user_id, doc_id, vector_store)
         if not self._enabled:
             return local_saved
-
         try:
             vec_folder_id = self.get_or_create_user_vec_folder(user_id, doc_id)
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -342,21 +318,13 @@ class GoogleDriveTenantMixin:
                     if fpath.exists():
                         from googleapiclient.http import MediaIoBaseUpload
                         media = MediaIoBaseUpload(io.BytesIO(fpath.read_bytes()), mimetype="application/octet-stream")
-                        escaped = self._escape_query_str(fname)
-                        q = f"'{vec_folder_id}' in parents and name = '{escaped}' and trashed = false"
-                        res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
-                        files = res.get("files", [])
-                        if files:
-                            self._service.files().update(fileId=files[0]["id"], media_body=media, supportsAllDrives=True).execute()
-                        else:
-                            self._service.files().create(body={"name": fname, "parents": [vec_folder_id]}, media_body=media, supportsAllDrives=True).execute()
+                        self._upload_or_update_file(vec_folder_id, fname, media)
             return True
         except Exception as exc:
-            logger.warning("Failed to save user vector store to Google Drive: %s", exc)
+            logger.warning("Failed to save user vector store to Drive: %s", exc)
             return local_saved
 
     def load_user_vector_store(self, user_id: str, doc_id: str, embeddings: Any) -> Optional[Any]:
-        """Download and reconstruct FAISS index from local cache or Google Drive."""
         from storage.local import LocalStorageBackend
         local_store = LocalStorageBackend().load_user_vector_store(user_id, doc_id, embeddings)
         if local_store is not None:
@@ -367,27 +335,21 @@ class GoogleDriveTenantMixin:
             vec_folder_id = self.get_or_create_user_vec_folder(user_id, doc_id)
             with tempfile.TemporaryDirectory() as temp_dir:
                 for fname in ("index.faiss", "index.pkl"):
-                    escaped = self._escape_query_str(fname)
-                    q = f"'{vec_folder_id}' in parents and name = '{escaped}' and trashed = false"
-                    res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
-                    files = res.get("files", [])
-                    if not files:
+                    hit = self._find_drive_file(vec_folder_id, fname)
+                    if not hit:
                         return None
-                    content = self._service.files().get_media(fileId=files[0]["id"], supportsAllDrives=True).execute()
+                    content = self._service.files().get_media(fileId=hit["id"], supportsAllDrives=True).execute()
                     (Path(temp_dir) / fname).write_bytes(content)
                 from langchain_community.vectorstores import FAISS
                 store = FAISS.load_local(temp_dir, embeddings, allow_dangerous_deserialization=True)
-                try:
-                    LocalStorageBackend().save_user_vector_store(user_id, doc_id, store)
-                except Exception:
-                    pass
+                try: LocalStorageBackend().save_user_vector_store(user_id, doc_id, store)
+                except Exception: pass
                 return store
         except Exception as exc:
-            logger.warning("Failed to load user vector store from Google Drive: %s", exc)
+            logger.warning("Failed to load user vector store from Drive: %s", exc)
             return None
 
     def has_user_vector_store(self, user_id: str, doc_id: str) -> bool:
-        """Check whether vector store exists in local cache or Google Drive."""
         from storage.local import LocalStorageBackend
         if LocalStorageBackend().has_user_vector_store(user_id, doc_id):
             return True
@@ -395,13 +357,7 @@ class GoogleDriveTenantMixin:
             return False
         try:
             vec_folder_id = self.get_or_create_user_vec_folder(user_id, doc_id)
-            for fname in ("index.faiss", "index.pkl"):
-                escaped = self._escape_query_str(fname)
-                q = f"'{vec_folder_id}' in parents and name = '{escaped}' and trashed = false"
-                res = self._service.files().list(q=q, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
-                if not res.get("files"):
-                    return False
-            return True
+            return all(self._find_drive_file(vec_folder_id, fname) is not None for fname in ("index.faiss", "index.pkl"))
         except Exception:
             return False
 
@@ -440,13 +396,11 @@ class GoogleDriveTenantMixin:
                     doc_id, doc_fid = doc_folder["name"], doc_folder["id"]
                     if doc_id in existing_ids:
                         continue
-                    q_meta = f"'{doc_fid}' in parents and name = 'metadata.json' and trashed = false"
-                    meta_res = self._service.files().list(q=q_meta, spaces="drive", fields="files(id)", supportsAllDrives=True).execute()
-                    meta_files = meta_res.get("files", [])
-                    if not meta_files:
+                    meta_hit = self._find_drive_file(doc_fid, "metadata.json")
+                    if not meta_hit:
                         continue
                     try:
-                        meta_bytes = self._service.files().get_media(fileId=meta_files[0]["id"], supportsAllDrives=True).execute()
+                        meta_bytes = self._service.files().get_media(fileId=meta_hit["id"], supportsAllDrives=True).execute()
                         meta = json.loads(meta_bytes.decode("utf-8")) if meta_bytes else {}
                     except Exception:
                         meta = {}
@@ -456,15 +410,11 @@ class GoogleDriveTenantMixin:
                     mime_type = meta.get("mime_type", "application/octet-stream")
 
                     drive_file_id, web_link = None, None
-                    escaped_fn = self._escape_query_str(filename)
-                    q_file = f"'{doc_fid}' in parents and name = '{escaped_fn}' and trashed = false"
-                    file_res = self._service.files().list(q=q_file, spaces="drive", fields="files(id, webViewLink, size)", supportsAllDrives=True).execute()
-                    file_hits = file_res.get("files", [])
-                    if file_hits:
-                        drive_file_id = file_hits[0].get("id")
-                        web_link = file_hits[0].get("webViewLink")
-                        if not size_bytes:
-                            size_bytes = int(file_hits[0].get("size", 0))
+                    file_hit = self._find_drive_file(doc_fid, filename)
+                    if file_hit:
+                        drive_file_id = file_hit.get("id")
+                        web_link = file_hit.get("webViewLink")
+                        size_bytes = size_bytes or int(file_hit.get("size", 0))
 
                     target_uid = "fd524aa6-88e8-4efa-9883-cbc5c45a2f06" if ("24c77907" in user_id or "operapoint" in user_id) else user_id
                     save_document_record(

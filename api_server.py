@@ -144,12 +144,11 @@ def startup_storage_restore() -> None:
 
 @app.on_event("shutdown")
 def shutdown_storage_sync() -> None:
-    """Sync latest SQLite database and long-term memory store to persistent storage on shutdown."""
+    """Sync latest SQLite database, memory store, and audit logs on shutdown."""
     try:
-        if hasattr(storage, "sync_database"):
-            storage.sync_database("chatbot.db")
-        if hasattr(storage, "sync_memory"):
-            storage.sync_memory("memory.db")
+        if hasattr(storage, "sync_database"): storage.sync_database("chatbot.db")
+        if hasattr(storage, "sync_memory"): storage.sync_memory("memory.db")
+        if hasattr(storage, "sync_audit_logs"): storage.sync_audit_logs("chatbot.db")
     except Exception as exc:
         logger.warning("Shutdown storage sync encountered warning: %s", exc)
 

@@ -10,7 +10,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-ALLOWED_CATEGORIES = frozenset({"documents", "workspace", "vectors", "exports", "attachments", "audio", "database", "memory"})
+ALLOWED_CATEGORIES = frozenset({"documents", "workspace", "vectors", "exports", "attachments", "audio", "database", "memory", "artifacts", "logs"})
 
 
 class StoragePathError(ValueError, PermissionError):
@@ -278,3 +278,46 @@ class StorageBackend(ABC):
     def has_user_vector_store(self, user_id: str, doc_id: str) -> bool:
         """Check whether vector store exists under users/{user_id}/vectors/{doc_id}/."""
         return False
+
+    def list_database_snapshots(self) -> list[dict[str, Any]]:
+        """List historical database snapshots."""
+        return []
+
+    def save_document_summary(self, user_id: str, doc_id: str, summary_data: dict[str, Any]) -> bool:
+        """Cache pre-computed document summary."""
+        return False
+
+    def load_document_summary(self, user_id: str, doc_id: str) -> Optional[dict[str, Any]]:
+        """Load pre-computed document summary."""
+        return None
+
+    def save_user_artifact(
+        self,
+        user_id: str,
+        artifact_name: str,
+        content: bytes | str,
+        mime_type: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Save agent artifact."""
+        return {"user_id": user_id, "artifact_name": artifact_name, "success": False}
+
+    def load_user_artifact(self, user_id: str, artifact_name: str) -> Optional[bytes]:
+        """Load agent artifact bytes."""
+        return None
+
+    def list_user_artifacts(self, user_id: str) -> list[dict[str, Any]]:
+        """List all artifacts generated for the user."""
+        return []
+
+    def sync_audit_logs(self, db_path: str = "chatbot.db", limit: int = 500) -> bool:
+        """Export latest audit log records to persistent storage."""
+        return False
+
+    def save_knowledge_graph(self, graph_data: dict[str, Any], scope: str = "system") -> bool:
+        """Persist cross-document knowledge graph state."""
+        return False
+
+    def load_knowledge_graph(self, scope: str = "system") -> Optional[dict[str, Any]]:
+        """Load cross-document knowledge graph state."""
+        return None
