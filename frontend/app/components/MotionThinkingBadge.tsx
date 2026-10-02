@@ -132,7 +132,6 @@ export default function MotionThinkingBadge({ activeTool, isThinking = false }: 
             ))}
           </div>
           <Activity size={10} className="text-emerald-400" />
-          <span className="text-zinc-400 text-[10px]">Motion Engine</span>
         </div>
       </motion.div>
     </AnimatePresence>
