@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -15,13 +16,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from storage import storage
 from langraph_rag_backend import (
-    chatbot,
-    delete_thread,
-    get_all_thread_titles,
-    ingest_pdf,
-    retrieve_all_threads,
-    set_thread_title,
-    thread_document_metadata,
+    chatbot, delete_thread, get_all_thread_titles, ingest_pdf,
+    retrieve_all_threads, set_thread_title, thread_document_metadata,
 )
 from src.rag import multi_doc_manager
 from src.auth import auth_router, create_access_token, decode_and_verify_token, get_current_user, init_auth_db
@@ -31,6 +27,8 @@ from src.agent.routes import services_router
 from src.security import sanitize_output, validate_input_prompt
 from src.agent import hitl_manager
 from src.observability import audit_logger, cost_tracker, estimate_token_count
+
+logger = logging.getLogger("api_server")
 
 app = FastAPI(title="Agent-Pilot API", version="1.1.0")
 origins = list(dict.fromkeys([
