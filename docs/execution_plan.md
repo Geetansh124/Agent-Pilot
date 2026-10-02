@@ -114,5 +114,5 @@ Lead (Gemini) ──► researcher ──► architect ──► coder ──►
 | 6 | Optimistic upload UI in `DocumentHubModal` | No empty state during upload | ✅ Complete |
 | 7 | All files under 500 lines | Clean architecture, zero bloat | ✅ Complete |
 | 8 | Run full pytest / unittest suite | All storage & RAG tests passing | ✅ Complete |
-| 9 | Push updates to git | Auto-deploy to Render & Vercel | ⏳ In Progress |
-| 10 | Live user verification in browser | Lifetime document persistence confirmed | ⏳ Next |
+| 9 | Push updates to git | Auto-deploy to Render & Vercel | ✅ Complete |
+| 10 | Live user verification in browser | Lifetime document persistence confirmed | ⏳ Active |
