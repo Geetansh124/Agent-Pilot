@@ -1,7 +1,9 @@
-import sqlite3
 import json
+import os
+import sqlite3
 
-conn = sqlite3.connect('chatbot_gdrive.db')
+db_file = 'chatbot_gdrive.db' if os.path.exists('chatbot_gdrive.db') else 'chatbot.db'
+conn = sqlite3.connect(db_file)
 c = conn.cursor()
 
 c.execute('SELECT id, email, full_name, role FROM users')
