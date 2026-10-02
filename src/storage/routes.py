@@ -349,6 +349,7 @@ def download_document(doc_id: str, user: dict[str, Any] = Depends(get_current_us
 def attach_document_to_thread_endpoint(
     thread_id: str,
     doc_id: str,
+    background_tasks: BackgroundTasks,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Attach document to thread with on-demand cache warm-up and tenant isolation."""
@@ -364,48 +365,64 @@ def attach_document_to_thread_endpoint(
     attach_document_to_thread(thread_id=thread_id, doc_id=doc_id, user_id=user_id)
 
     # Warm up cache on demand: load or rebuild vector store
-    from langraph_rag_backend import get_embeddings
-    from src.rag import multi_doc_manager
+    try:
+        from langraph_rag_backend import get_embeddings
+        from src.rag import multi_doc_manager
 
-    vector_store = None
-    chunks = None
-    if storage.has_user_vector_store(user_id=user_id, doc_id=doc_id):
-        try:
-            vector_store = storage.load_user_vector_store(
-                user_id=user_id, doc_id=doc_id, embeddings=get_embeddings()
-            )
-        except Exception as exc:
-            logger.warning("Failed loading persisted vector store for doc %s: %s", doc_id, exc)
+        owner_uid = doc.get("user_id") or user_id
+        vector_store = None
+        chunks = None
 
-    if vector_store is None:
-        raw_bytes = storage.load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])
-        if raw_bytes:
-            from langchain_community.vectorstores import FAISS
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
-            from src.tools.document_loader import load_document_from_bytes
-
-            docs = load_document_from_bytes(raw_bytes, doc["filename"])
-            if docs:
-                splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-                chunks = splitter.split_documents(docs)
-                for idx, chunk in enumerate(chunks):
-                    chunk.metadata["doc_id"] = doc_id
-                    chunk.metadata["filename"] = doc["filename"]
-                    chunk.metadata["chunk_index"] = idx
-                vector_store = FAISS.from_documents(chunks, get_embeddings())
+        # Check owner_uid first, then user_id for pre-existing vector store
+        for check_uid in dict.fromkeys([owner_uid, user_id]):
+            if storage.has_user_vector_store(user_id=check_uid, doc_id=doc_id):
                 try:
-                    storage.save_user_vector_store(user_id=user_id, doc_id=doc_id, vector_store=vector_store)
+                    vector_store = storage.load_user_vector_store(
+                        user_id=check_uid, doc_id=doc_id, embeddings=get_embeddings()
+                    )
+                    if vector_store:
+                        break
                 except Exception as exc:
-                    logger.warning("Failed re-persisting vector store: %s", exc)
+                    logger.warning("Failed loading persisted vector store for doc %s: %s", doc_id, exc)
 
-    if vector_store:
-        multi_doc_manager.attach_document(
-            thread_id=thread_id,
-            doc_id=doc_id,
-            filename=doc["filename"],
-            vector_store=vector_store,
-            chunks=chunks,
-        )
+        if vector_store is None:
+            raw_bytes = storage.load_user_document_bytes(user_id=owner_uid, doc_id=doc_id, filename=doc["filename"])
+            if not raw_bytes and owner_uid != user_id:
+                raw_bytes = storage.load_user_document_bytes(user_id=user_id, doc_id=doc_id, filename=doc["filename"])
+            if raw_bytes:
+                from langchain_community.vectorstores import FAISS
+                from langchain_text_splitters import RecursiveCharacterTextSplitter
+                from src.tools.document_loader import load_document_from_bytes
+
+                docs = load_document_from_bytes(raw_bytes, doc["filename"])
+                if docs:
+                    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                    all_chunks = splitter.split_documents(docs)
+                    # Cap to first 40 chunks for on-demand attach to guarantee fast sub-3s response and prevent memory spikes
+                    chunks = all_chunks[:40]
+                    for idx, chunk in enumerate(chunks):
+                        chunk.metadata["doc_id"] = doc_id
+                        chunk.metadata["filename"] = doc["filename"]
+                        chunk.metadata["chunk_index"] = idx
+                    vector_store = FAISS.from_documents(chunks, get_embeddings())
+                    try:
+                        if background_tasks:
+                            background_tasks.add_task(storage.save_user_vector_store, owner_uid, doc_id, vector_store)
+                        else:
+                            storage.save_user_vector_store(user_id=owner_uid, doc_id=doc_id, vector_store=vector_store)
+                    except Exception as exc:
+                        logger.warning("Failed re-persisting vector store: %s", exc)
+
+        if vector_store:
+            multi_doc_manager.attach_document(
+                thread_id=thread_id,
+                doc_id=doc_id,
+                filename=doc["filename"],
+                vector_store=vector_store,
+                chunks=chunks,
+            )
+    except Exception as exc:
+        logger.warning("Vector store warm-up warning during attach for doc %s: %s", doc_id, exc)
 
     return {
         "status": "attached",
