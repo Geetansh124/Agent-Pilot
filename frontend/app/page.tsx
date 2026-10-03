@@ -213,8 +213,15 @@ export default function Home() {
       setMessages((cur) => {
         const next = [...cur];
         const last = next[next.length - 1];
-        if (last?.role === "assistant" && !last.content) {
-          next[next.length - 1] = { role: "assistant", content: msg };
+        if (last?.role === "assistant") {
+          if (!last.content) {
+            next[next.length - 1] = { role: "assistant", content: msg };
+          } else {
+            next[next.length - 1] = {
+              ...last,
+              content: last.content + "\n\n*(Stream ended due to network interruption)*",
+            };
+          }
         } else {
           next.push({ role: "assistant", content: msg });
         }

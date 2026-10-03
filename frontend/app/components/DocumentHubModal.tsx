@@ -426,7 +426,7 @@ export default function DocumentHubModal({
         <div className="flex items-center justify-between border-t border-white/[0.08] px-6 py-3 bg-zinc-950/80 text-[11px] text-zinc-500">
           <div className="flex items-center gap-1.5">
             <ShieldCheck size={13} className="text-emerald-400" />
-            <span>Encrypted cloud storage (Google Drive + Vector RAG)</span>
+            <span>Encrypted cloud storage</span>
           </div>
           <span>
             {pendingFile
