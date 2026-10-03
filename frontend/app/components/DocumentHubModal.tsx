@@ -145,7 +145,8 @@ export default function DocumentHubModal({
         setError(errData.detail || "Failed to attach document to thread.");
       }
     } catch (err) {
-      setError("Network error attaching document.");
+      console.warn("Document attach error:", err);
+      setError("Network error attaching document. If the backend server is waking up, please retry in a few moments.");
     } finally {
       setAttachingId(null);
     }

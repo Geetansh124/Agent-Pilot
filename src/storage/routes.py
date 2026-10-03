@@ -342,30 +342,8 @@ def download_document(doc_id: str, user: dict[str, Any] = Depends(get_current_us
     )
 
 
-@documents_router.post(
-    "/threads/{thread_id}/documents/{doc_id}/attach",
-    status_code=status.HTTP_200_OK,
-    summary="Attach any user-owned document to an active thread for grounded Q&A",
-)
-def attach_document_to_thread_endpoint(
-    thread_id: str,
-    doc_id: str,
-    background_tasks: BackgroundTasks,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, Any]:
-    """Attach document to thread with on-demand cache warm-up and tenant isolation."""
-    user_id = _extract_user_id(user)
-    doc = get_user_document(doc_id, user_id)
-    if not doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document '{doc_id}' not found or access denied.",
-        )
-
-    # Attach in database
-    attach_document_to_thread(thread_id=thread_id, doc_id=doc_id, user_id=user_id)
-
-    # Warm up cache on demand: load or rebuild vector store
+def _warmup_thread_document(thread_id: str, doc_id: str, doc: dict[str, Any], user_id: str) -> None:
+    """Background task to warm up vector store and cache for attached document."""
     try:
         from langraph_rag_backend import get_embeddings
         from src.rag import multi_doc_manager
@@ -409,7 +387,7 @@ def attach_document_to_thread_endpoint(
                 if docs:
                     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
                     all_chunks = splitter.split_documents(docs)
-                    # Cap to first 40 chunks for on-demand attach to guarantee fast sub-3s response and prevent memory spikes
+                    # Cap to first 40 chunks for on-demand attach to guarantee fast response and prevent memory spikes
                     chunks = all_chunks[:40]
                     for idx, chunk in enumerate(chunks):
                         chunk.metadata["doc_id"] = doc_id
@@ -417,10 +395,7 @@ def attach_document_to_thread_endpoint(
                         chunk.metadata["chunk_index"] = idx
                     vector_store = FAISS.from_documents(chunks, get_embeddings())
                     try:
-                        if background_tasks:
-                            background_tasks.add_task(storage.save_user_vector_store, owner_uid, doc_id, vector_store)
-                        else:
-                            storage.save_user_vector_store(user_id=owner_uid, doc_id=doc_id, vector_store=vector_store)
+                        storage.save_user_vector_store(user_id=owner_uid, doc_id=doc_id, vector_store=vector_store)
                     except Exception as exc:
                         logger.warning("Failed re-persisting vector store: %s", exc)
                     try:
@@ -442,7 +417,77 @@ def attach_document_to_thread_endpoint(
     except Exception as exc:
         logger.warning("Vector store warm-up warning during attach for doc %s: %s", doc_id, exc)
 
-    resolved_chunks = len(chunks) if chunks else doc.get("chunks_count", 0)
+
+@documents_router.post(
+    "/threads/{thread_id}/documents/{doc_id}/attach",
+    status_code=status.HTTP_200_OK,
+    summary="Attach any user-owned document to an active thread for grounded Q&A",
+)
+def attach_document_to_thread_endpoint(
+    thread_id: str,
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Attach document to thread with on-demand cache warm-up and tenant isolation."""
+    user_id = _extract_user_id(user)
+    doc = get_user_document(doc_id, user_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{doc_id}' not found or access denied.",
+        )
+
+    # Attach in database
+    attach_document_to_thread(thread_id=thread_id, doc_id=doc_id, user_id=user_id)
+
+    # Fast path: check if vector store is ALREADY available in local storage / memory
+    attached_locally = False
+    from storage.local import LocalStorageBackend
+    owner_uid = doc.get("user_id") or user_id
+    has_local = False
+    target_uid = owner_uid
+    if LocalStorageBackend().has_user_vector_store(user_id=owner_uid, doc_id=doc_id):
+        has_local = True
+        target_uid = owner_uid
+    elif LocalStorageBackend().has_user_vector_store(user_id=user_id, doc_id=doc_id):
+        has_local = True
+        target_uid = user_id
+
+    if has_local:
+        try:
+            from langraph_rag_backend import get_embeddings
+            from src.rag import multi_doc_manager
+            store = LocalStorageBackend().load_user_vector_store(
+                user_id=target_uid,
+                doc_id=doc_id,
+                embeddings=get_embeddings(),
+            )
+            if store:
+                multi_doc_manager.attach_document(
+                    thread_id=thread_id,
+                    doc_id=doc_id,
+                    filename=doc["filename"],
+                    vector_store=store,
+                )
+                attached_locally = True
+        except Exception as exc:
+            logger.warning("Fast local attach warning: %s", exc)
+
+    # If not attached locally (e.g. requires remote Google Drive network I/O or indexing),
+    # warm it up asynchronously in background so endpoint returns immediately (<20ms).
+    if not attached_locally:
+        if background_tasks:
+            background_tasks.add_task(_warmup_thread_document, thread_id, doc_id, doc, user_id)
+        else:
+            _warmup_thread_document(thread_id, doc_id, doc, user_id)
+
+    # Sync database to persistent storage in background
+    if hasattr(storage, "sync_database"):
+        if background_tasks:
+            background_tasks.add_task(storage.sync_database, "chatbot.db")
+
+    resolved_chunks = doc.get("chunks_count", 0) or 1
     return {
         "status": "attached",
         "thread_id": thread_id,

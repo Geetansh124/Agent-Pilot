@@ -11,6 +11,8 @@ import json
 import logging
 import os
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -31,6 +33,10 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 class GoogleDriveStorage(GoogleDriveTenantMixin, GoogleDriveArtifactsMixin, StorageBackend):
     """Google Drive storage backend implementing the StorageBackend interface."""
+
+    _lock = threading.RLock()
+    _last_health_check_time: float = 0.0
+    _last_health_check_result: bool = False
 
     def __init__(self, service_account_json: Optional[str | dict] = None, root_folder_id: Optional[str] = None, **kwargs: Any) -> None:
         self._raw_creds = service_account_json or kwargs.get("service_account_info") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -476,17 +482,27 @@ class GoogleDriveStorage(GoogleDriveTenantMixin, GoogleDriveArtifactsMixin, Stor
             logger.warning("Failed to list files from Google Drive: %s", exc)
             return []
 
-    def health_check(self) -> bool:
-        """Verify Google Drive API connectivity."""
+    def health_check(self, ttl: float = 60.0) -> bool:
+        """Verify Google Drive API connectivity with TTL caching to avoid API rate limits."""
         if not self._enabled or not self._service:
             return False
+        now = time.time()
+        if (now - getattr(self, "_last_health_check_time", 0.0)) < ttl:
+            return getattr(self, "_last_health_check_result", False)
         try:
-            root_id = self._root_folder_id or self._get_root_id()
-            if root_id:
-                res = self._service.files().get(fileId=root_id, fields="id, name, trashed", supportsAllDrives=True).execute()
-                return bool(res and res.get("id"))
-            about = self._service.about().get(fields="user(emailAddress, displayName)").execute()
-            return bool(about and "user" in about)
+            with self._lock:
+                root_id = self._root_folder_id or self._get_root_id()
+                if root_id:
+                    res = self._service.files().get(fileId=root_id, fields="id, name, trashed", supportsAllDrives=True).execute()
+                    res_ok = bool(res and res.get("id"))
+                else:
+                    about = self._service.about().get(fields="user(emailAddress, displayName)").execute()
+                    res_ok = bool(about and "user" in about)
+                self._last_health_check_time = now
+                self._last_health_check_result = res_ok
+                return res_ok
         except Exception as exc:
             logger.warning("Google Drive health check failed: %s", exc)
+            self._last_health_check_time = now
+            self._last_health_check_result = False
             return False

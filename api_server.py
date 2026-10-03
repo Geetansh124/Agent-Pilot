@@ -8,6 +8,18 @@ import uuid
 from collections import defaultdict
 from typing import Any, Optional
 
+# Limit PyTorch / OpenMP CPU thread allocation to prevent thread starvation and memory bloat on constrained cloud environments
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+try:
+    import torch
+    torch.set_num_threads(1)
+except Exception:
+    pass
+
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
@@ -33,12 +45,13 @@ logger = logging.getLogger("api_server")
 app = FastAPI(title="Agent-Pilot API", version="1.1.0")
 origins = list(dict.fromkeys([
     "http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001",
+    "https://agent-pilot.soapy-pint.workers.dev",
     *[o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
 ]))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*(\.vercel\.app|\.workers\.dev|\.pages\.dev)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

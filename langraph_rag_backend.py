@@ -84,7 +84,16 @@ def get_embeddings():
     """Create the embedding model lazily to avoid import-time startup crashes."""
     global embeddings
     if embeddings is None:
-        embeddings = HuggingFaceEmbeddings(model='sentence-transformers/all-MiniLM-L6-v2')
+        try:
+            import torch
+            torch.set_num_threads(1)
+        except Exception:
+            pass
+        embeddings = HuggingFaceEmbeddings(
+            model_name='sentence-transformers/all-MiniLM-L6-v2',
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True},
+        )
     return embeddings
 
 
