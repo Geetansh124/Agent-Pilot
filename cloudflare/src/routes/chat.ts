@@ -6,6 +6,8 @@ import {
   getThreadById,
   saveMessage,
 } from '../db';
+import { executeEdgeTool } from '../tools';
+import { OPENAI_TOOLS } from '../tools/definitions';
 import { Env } from '../types';
 
 export const chatRouter = new Hono<{ Bindings: Env; Variables: { userId: string; userRole: string; userEmail: string } }>();
@@ -25,7 +27,7 @@ function buildSystemPrompt(doc: any | null): string {
     docContext = `\n\nDOCUMENT CONTEXT (${doc.filename}):\n${excerpt}\n`;
   }
 
-  return `You are Agent-Pilot, a helpful, intelligent, and accurate AI assistant.
+  return `You are Agent-Pilot, a helpful, intelligent, and accurate AI assistant equipped with real-time edge tools.
 
 COMMUNICATION & FORMATTING RULES:
 - Always keep your responses clear, clean, natural, and concise.
@@ -37,25 +39,33 @@ ${docPriority}${docContext}`;
 async function callNvidiaChat(
   apiKey: string,
   messages: Array<{ role: string; content: string }>,
-  stream: boolean = false
+  stream: boolean = false,
+  tools?: any[]
 ): Promise<Response> {
   let lastError: any = null;
 
   for (const model of NVIDIA_MODELS) {
     try {
+      const payload: any = {
+        model,
+        messages,
+        max_tokens: 2048,
+        temperature: 0.7,
+        stream,
+      };
+
+      if (tools && tools.length > 0 && !stream) {
+        payload.tools = tools;
+        payload.tool_choice = 'auto';
+      }
+
       const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          max_tokens: 2048,
-          temperature: 0.7,
-          stream,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -72,6 +82,65 @@ async function callNvidiaChat(
   }
 
   throw lastError || new Error('All NVIDIA models failed to respond.');
+}
+
+async function detectAndExecuteTool(
+  message: string,
+  threadId: string,
+  db: any
+): Promise<{ toolName: string; observation: any } | null> {
+  const lower = message.toLowerCase().trim();
+
+  // 1. Calculator: detects math expressions
+  const calcMatch = lower.match(/(?:calculate|calc|what is|compute)\s+([0-9\.\s\+\-\*\/\^\(\)\%sqrtcbrtsincostanlogroundabs]+)/i);
+  if (calcMatch && calcMatch[1].length > 2 && /[\+\-\*\/\^\%]/.test(calcMatch[1])) {
+    const res = await executeEdgeTool('calculator', { expression: calcMatch[1] });
+    if (res.success && res.result?.success) {
+      return { toolName: 'calculator', observation: res.result };
+    }
+  }
+
+  // 2. Temporal / Date / Time
+  if (/\b(what time|what date|what day|today's date|current time|current year|what year|what is the date|what is today)\b/i.test(lower)) {
+    const res = await executeEdgeTool('get_current_datetime', {});
+    return { toolName: 'get_current_datetime', observation: res.result };
+  }
+
+  // 3. Stock Price
+  const stockMatch = lower.match(/\b(?:stock|share)\s+price\s+of\s+([a-zA-Z]{1,5})\b/i) ||
+                     lower.match(/\b([a-zA-Z]{1,5})\s+stock\b/i) ||
+                     lower.match(/\bprice\s+of\s+\$?([A-Z]{2,5})\b/);
+  if (stockMatch) {
+    const sym = stockMatch[1].toUpperCase();
+    if (!['WHAT', 'HOW', 'WHY', 'THE', 'THIS', 'THAT'].includes(sym)) {
+      const res = await executeEdgeTool('get_stock_price', { symbol: sym });
+      if (res.success && !res.result?.error) {
+        return { toolName: 'get_stock_price', observation: res.result };
+      }
+    }
+  }
+
+  // 4. Web Search
+  const searchMatch = lower.match(/(?:search|look up|find|google)\s+(?:for\s+)?["']?([^"'\n\r]+)["']?\s+(?:on the web|online)?/i);
+  if (searchMatch && searchMatch[1].length > 3 && (lower.includes('search') || lower.includes('look up') || lower.includes('online'))) {
+    const query = searchMatch[1].replace(/^(for|about)\s+/i, '').trim();
+    if (query) {
+      const res = await executeEdgeTool('web_search', { query });
+      if (res.success && res.result?.results?.length > 0) {
+        return { toolName: 'web_search', observation: res.result };
+      }
+    }
+  }
+
+  // 5. Document RAG tool if question asks about attached document
+  if (lower.includes('document') || lower.includes('file') || lower.includes('pdf') || lower.includes('paper')) {
+    const res = await executeEdgeTool('rag_tool', { query: message }, { db, threadId });
+    if (res.success && res.result?.matches?.length > 0) {
+      return { toolName: 'rag_tool', observation: res.result };
+    }
+  }
+
+  return null;
 }
 
 chatRouter.post('/', async (c) => {
@@ -103,6 +172,14 @@ chatRouter.post('/', async (c) => {
 
   await saveMessage(c.env.DB, threadId, 'user', message);
 
+  const toolData = await detectAndExecuteTool(message, threadId, c.env.DB);
+  if (toolData) {
+    conversationMessages.push({
+      role: 'system',
+      content: `[Real-Time Edge Tool Observation (${toolData.toolName})]: ${JSON.stringify(toolData.observation)}\nUse this real-time observation to provide an accurate, grounded answer.`,
+    });
+  }
+
   const apiKey = c.env.NVIDIA_API_KEY || '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';
 
   try {
@@ -115,7 +192,7 @@ chatRouter.post('/', async (c) => {
     return c.json({
       thread_id: threadId,
       message: assistantMessage,
-      tools_used: [],
+      tools_used: toolData ? [toolData.toolName] : [],
     });
   } catch (err: any) {
     return c.json({ detail: err.message || 'AI service error' }, 503);
@@ -180,6 +257,16 @@ chatRouter.post('/stream', async (c) => {
         safeWrite(': keep-alive\n\n').catch(() => {});
       }, 15000);
 
+      // Check and execute real-time edge tools
+      const toolData = await detectAndExecuteTool(message, threadId, c.env.DB);
+      if (toolData) {
+        await safeWrite(`data: ${JSON.stringify({ type: 'tool', name: toolData.toolName })}\n\n`);
+        conversationMessages.push({
+          role: 'system',
+          content: `[Real-Time Edge Tool Observation (${toolData.toolName})]: ${JSON.stringify(toolData.observation)}\nUse this real-time observation to provide an accurate, grounded answer.`,
+        });
+      }
+
       const upstreamRes = await callNvidiaChat(apiKey, conversationMessages, true);
       const reader = upstreamRes.body?.getReader();
 
@@ -222,7 +309,7 @@ chatRouter.post('/stream', async (c) => {
         }
       }
 
-      const donePayload = `data: ${JSON.stringify({ type: 'done', tools_used: [] })}\n\n`;
+      const donePayload = `data: ${JSON.stringify({ type: 'done', tools_used: toolData ? [toolData.toolName] : [] })}\n\n`;
       await safeWrite(donePayload);
     } catch (err: any) {
       console.warn('Streaming error/interruption:', err.message);

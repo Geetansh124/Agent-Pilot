@@ -300,10 +300,23 @@ export async function deleteDocument(
   userId: string
 ): Promise<boolean> {
   const res = await db
-    .prepare('DELETE FROM documents WHERE id = ? AND (user_id = ? OR user_id = "guest")')
-    .bind(docId, userId)
+    .prepare(
+      `DELETE FROM documents 
+       WHERE (id = ? OR filename = ?) 
+         AND (user_id = ? OR user_id = 'guest' OR ? = 'guest' OR ? = 'admin')`
+    )
+    .bind(docId, docId, userId, userId, userId)
     .run();
-  return (res.meta?.changes ?? 0) > 0;
+
+  const deleted = (res.meta?.changes ?? 0) > 0;
+  if (deleted) {
+    try {
+      await db.prepare('DELETE FROM thread_documents WHERE doc_id = ?').bind(docId).run();
+      await db.prepare('UPDATE threads SET active_document_id = NULL WHERE active_document_id = ?').bind(docId).run();
+    } catch {}
+    return true;
+  }
+  return false;
 }
 
 export async function attachDocumentToThread(

@@ -1,0 +1,30 @@
+{
+  "name": "Agent-Pilot — Autonomous Agent & Live Voice Workspace",
+  "short_name": "Agent-Pilot",
+  "description": "Intelligent edge agent workspace with real-time Gemini Live Voice and autonomous tool orchestration",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-icon.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    }
+  ],
+  "categories": ["productivity", "utilities", "business"]
+}

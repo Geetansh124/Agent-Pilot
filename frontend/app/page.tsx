@@ -3,13 +3,14 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import {
   ArrowUp, Square, Loader2, Upload, Globe,
-  Code2, BarChart3, FileText, X, Cloud,
+  Code2, BarChart3, FileText, X, Cloud, Mic,
 } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import ChatMessage from "./components/ChatMessage";
 import AuthModal from "./components/AuthModal";
 import DocumentHubModal from "./components/DocumentHubModal";
+import VoiceFlightDeckModal from "./components/VoiceFlightDeckModal";
 import HeroMotionDeck from "./components/HeroMotionDeck";
 import MotionThinkingBadge from "./components/MotionThinkingBadge";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,6 +37,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [documentHubOpen, setDocumentHubOpen] = useState(false);
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
 
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -305,6 +307,7 @@ export default function Home() {
         <Header
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           onNewChat={() => newChat()} activeTool={activeTool}
+          onOpenVoiceModal={() => setVoiceModalOpen(true)}
           onOpenAuthModal={() => setAuthModalOpen(true)}
           onOpenDocumentHub={() => setDocumentHubOpen(true)}
         />
@@ -381,6 +384,15 @@ export default function Home() {
             )}
 
             <div className="flex items-end gap-2 p-2.5">
+              <button
+                type="button"
+                onClick={() => setVoiceModalOpen(true)}
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition cursor-pointer"
+                title="Launch Gemini Live Voice Flight Deck"
+              >
+                <Mic size={15} className="text-indigo-400" />
+              </button>
+
               <button
                 type="button"
                 onClick={() => setDocumentHubOpen(true)}
@@ -470,6 +482,13 @@ export default function Home() {
             chunks: doc.chunks_count || doc.chunks || 0,
           })
         }
+      />
+
+      {/* Live Voice Flight Deck Modal */}
+      <VoiceFlightDeckModal
+        isOpen={voiceModalOpen}
+        onClose={() => setVoiceModalOpen(false)}
+        activeThreadId={threadId}
       />
     </main>
   );

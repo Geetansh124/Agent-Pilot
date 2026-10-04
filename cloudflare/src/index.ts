@@ -5,6 +5,7 @@ import { authRouter } from './routes/auth';
 import { chatRouter } from './routes/chat';
 import { documentsRouter } from './routes/documents';
 import { threadsRouter } from './routes/threads';
+import { voiceRouter } from './routes/voice';
 import { Env } from './types';
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string; userRole: string; userEmail: string } }>();
@@ -40,6 +41,7 @@ app.route('/api/auth', authRouter);
 app.route('/api/threads', threadsRouter);
 app.route('/api/documents', documentsRouter);
 app.route('/api/chat', chatRouter);
+app.route('/api/voice', voiceRouter);
 
 // Fallback for static assets (Single-Page Application frontend)
 app.all('*', async (c) => {

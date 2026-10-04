@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   ASSETS?: Fetcher;
   NVIDIA_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   JWT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
 }

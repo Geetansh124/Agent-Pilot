@@ -152,18 +152,27 @@ export default function DocumentHubModal({
     }
   };
 
-  const handleDelete = async (docId: string) => {
-    if (!confirm("Are you sure you want to permanently delete this document?")) return;
+  const handleDelete = async (targetDoc: StoredDocument, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const docId = targetDoc.id || targetDoc.doc_id || targetDoc.filename;
+    if (!docId) return;
+
     setDeletingId(docId);
+    setError(null);
     try {
-      const res = await authFetch(`${API}/api/documents/${docId}`, {
+      const res = await authFetch(`${API}/api/documents/${encodeURIComponent(docId)}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        setDocuments((prev) => prev.filter((d) => d.id !== docId));
+        setDocuments((prev) =>
+          prev.filter((d) => d.id !== docId && d.doc_id !== docId && d.filename !== docId)
+        );
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.detail || "Failed to delete document.");
       }
     } catch (err) {
-      setError("Failed to delete document.");
+      setError("Failed to delete document. Please try again.");
     } finally {
       setDeletingId(null);
     }
@@ -407,7 +416,7 @@ export default function DocumentHubModal({
                       </button>
 
                       <button
-                        onClick={() => handleDelete(doc.id)}
+                        onClick={(e) => handleDelete(doc, e)}
                         disabled={isDeleting}
                         className="rounded-lg p-1.5 text-zinc-500 hover:text-red-400 hover:bg-white/[0.06] transition cursor-pointer"
                         title="Delete document"

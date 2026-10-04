@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Menu, Loader2, Plus, Cloud, LogIn, LogOut } from "lucide-react";
+import { Menu, Loader2, Plus, Cloud, LogIn, LogOut, Mic } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 interface HeaderProps {
@@ -9,6 +9,7 @@ interface HeaderProps {
   onNewChat?: () => void;
   activeTool: string | null;
   onOpenDocumentHub?: () => void;
+  onOpenVoiceModal?: () => void;
   onOpenAuthModal?: () => void;
 }
 
@@ -17,6 +18,7 @@ export default function Header({
   onNewChat,
   activeTool,
   onOpenDocumentHub,
+  onOpenVoiceModal,
   onOpenAuthModal,
 }: HeaderProps) {
   const { user, logout } = useAuth();
@@ -50,13 +52,25 @@ export default function Header({
         </div>
       </div>
 
-      {/* Right side: Active tool, Document Hub, New Chat, and Auth Badge */}
+      {/* Right side: Active tool, Live Voice, Document Hub, New Chat, and Auth Badge */}
       <div className="flex items-center gap-2">
         {activeTool && (
           <div className="flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200 shadow-sm animate-pulse">
             <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-ping" />
             <span className="font-mono text-[11px] font-medium tracking-wide">{activeTool}</span>
           </div>
+        )}
+
+        {onOpenVoiceModal && (
+          <button
+            type="button"
+            onClick={onOpenVoiceModal}
+            className="flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition active:scale-95 shadow-sm cursor-pointer"
+            title="Launch Gemini Live Voice Flight Deck"
+          >
+            <Mic size={13} className="text-indigo-400 animate-pulse" />
+            <span className="hidden sm:inline">Live Voice</span>
+          </button>
         )}
 
         {onOpenDocumentHub && (

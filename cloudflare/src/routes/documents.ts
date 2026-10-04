@@ -86,7 +86,8 @@ documentsRouter.post('/upload', async (c) => {
 
 documentsRouter.delete('/:id', async (c) => {
   const userId = c.get('userId') || 'guest';
-  const id = c.req.param('id');
+  const rawId = c.req.param('id');
+  const id = decodeURIComponent(rawId);
   const ok = await deleteDocument(c.env.DB, id, userId);
   if (!ok) {
     return c.json({ detail: 'Document not found or access denied.' }, 404);
