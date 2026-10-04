@@ -2,75 +2,141 @@ import { Hono } from 'hono';
 import { Env } from '../types';
 import { executeEdgeTool } from '../tools';
 import { GEMINI_FUNCTION_DECLARATIONS } from '../tools/definitions';
+import {
+  createVoiceProvider,
+  getAvailableProviders,
+  VoiceProviderName,
+  PROVIDER_DEFAULTS,
+} from '../voice';
+import { GeminiLiveProvider } from '../voice/gemini';
+import { OpenAIRealtimeProvider } from '../voice/openai';
+import { ElevenLabsProvider } from '../voice/elevenlabs';
 
 export const voiceRouter = new Hono<{ Bindings: Env; Variables: { userId: string; userRole: string; userEmail: string } }>();
 
-const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
+/**
+ * GET /api/voice/providers
+ * Returns the list of available voice providers and their configuration metadata.
+ */
+voiceRouter.get('/providers', (c) => {
+  const available = getAvailableProviders();
+  const providers = available.map((name) => ({
+    name,
+    ...PROVIDER_DEFAULTS[name],
+    hasServerKey: !!resolveApiKey(name, c.env),
+  }));
+
+  return c.json({ providers });
+});
 
 /**
  * POST /api/voice/token
- * Creates an ephemeral token for the Gemini Live API session.
- * Dual-credential architecture:
- * 1. Checks for user-provided custom key in request body.
- * 2. Falls back to server-configured GEMINI_API_KEY.
- * 3. Returns requireCustomKey: true if neither is present.
+ * Creates an ephemeral token for a voice session.
+ * Supports provider selection via `provider` body field (default: gemini).
  */
 voiceRouter.post('/token', async (c) => {
   const body = await c.req.json().catch(() => ({}));
+  const providerName = (body.provider || 'gemini').trim().toLowerCase() as VoiceProviderName;
   const customKey = (body.customApiKey || '').trim();
-  const apiKey = customKey || c.env.GEMINI_API_KEY || '';
+  const apiKey = customKey || resolveApiKey(providerName, c.env);
 
   if (!apiKey) {
     return c.json({
       requireCustomKey: true,
-      model: LIVE_MODEL,
-      tools: GEMINI_FUNCTION_DECLARATIONS,
-      message: 'No server GEMINI_API_KEY configured. Please provide your own Gemini API key in Voice settings.',
+      provider: providerName,
+      model: PROVIDER_DEFAULTS[providerName]?.defaultModel,
+      tools: providerName === 'gemini' ? GEMINI_FUNCTION_DECLARATIONS : undefined,
+      message: `No server API key configured for ${providerName}. Please provide your own key in Voice settings.`,
     });
   }
 
   try {
-    const expireTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const newSessionExpireTime = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    let tokenResult: { token?: string; expireTime?: string; error?: string; requireCustomKey?: boolean };
 
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        uses: 1,
-        expireTime,
-        newSessionExpireTime,
-      }),
-    });
+    switch (providerName) {
+      case 'gemini':
+        tokenResult = await GeminiLiveProvider.createSessionToken(apiKey);
+        if (!tokenResult.error) {
+          return c.json({
+            ...tokenResult,
+            provider: 'gemini',
+            model: PROVIDER_DEFAULTS.gemini.defaultModel,
+            tools: GeminiLiveProvider.getToolDeclarations(),
+          });
+        }
+        break;
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return c.json({
-        error: `Gemini Token API error (${res.status}): ${errText}`,
-        requireCustomKey: res.status === 400 || res.status === 403,
-      }, res.status as any);
+      case 'openai':
+        tokenResult = await OpenAIRealtimeProvider.createSessionToken(apiKey);
+        if (!tokenResult.error) {
+          return c.json({
+            ...tokenResult,
+            provider: 'openai',
+            model: PROVIDER_DEFAULTS.openai.defaultModel,
+          });
+        }
+        break;
+
+      case 'elevenlabs':
+        tokenResult = await ElevenLabsProvider.createSignedUrl(apiKey, body.agentId);
+        if (!tokenResult.error) {
+          return c.json({
+            ...tokenResult,
+            provider: 'elevenlabs',
+            model: PROVIDER_DEFAULTS.elevenlabs.defaultModel,
+          });
+        }
+        break;
+
+      case 'deepgram':
+        // Deepgram uses API key directly in WebSocket auth, no token exchange
+        tokenResult = { token: undefined };
+        return c.json({
+          provider: 'deepgram',
+          model: PROVIDER_DEFAULTS.deepgram.defaultModel,
+          message: 'Deepgram uses API key directly. Ready to connect.',
+        });
+
+      case 'anthropic':
+        return c.json({
+          provider: 'anthropic',
+          model: PROVIDER_DEFAULTS.anthropic.defaultModel,
+          message: 'Anthropic Claude Voice session ready.',
+        });
+
+      case 'groq':
+        return c.json({
+          provider: 'groq',
+          model: PROVIDER_DEFAULTS.groq.defaultModel,
+          message: 'Groq Whisper + LLM voice session ready.',
+        });
+
+      default:
+        return c.json({
+          error: `Voice provider '${providerName}' is not yet available. Available: ${getAvailableProviders().join(', ')}`,
+        }, 400);
     }
 
-    const data = await res.json() as any;
-    return c.json({
-      token: data.name,
-      model: LIVE_MODEL,
-      expireTime,
-      tools: GEMINI_FUNCTION_DECLARATIONS,
-    });
+    // Error path
+    if (tokenResult.error) {
+      return c.json({
+        error: tokenResult.error,
+        requireCustomKey: tokenResult.requireCustomKey,
+        provider: providerName,
+      }, tokenResult.requireCustomKey ? 401 : 500);
+    }
+
+    return c.json(tokenResult);
   } catch (err: any) {
     return c.json({
-      error: `Failed to generate ephemeral session token: ${err.message}`,
+      error: `Failed to generate session token for ${providerName}: ${err.message}`,
     }, 500);
   }
 });
 
 /**
  * POST /api/voice/tools/execute
- * Direct edge execution endpoint for tools invoked by the Gemini Live session.
+ * Direct edge execution endpoint for tools invoked by any voice provider session.
  */
 voiceRouter.post('/tools/execute', async (c) => {
   const body = await c.req.json().catch(() => ({}));
@@ -92,8 +158,9 @@ voiceRouter.post('/tools/execute', async (c) => {
 
 /**
  * GET /api/voice/ws
- * Cloudflare Worker WebSocket proxy to Gemini Live API.
- * Bridges client browser WebSocket with Google Gemini Live WebSocket,
+ * Multi-provider WebSocket proxy.
+ * Selects provider via `?provider=gemini|openai|elevenlabs|deepgram` query param.
+ * Bridges client browser WebSocket with upstream provider WebSocket,
  * enabling edge execution of function calls and low-latency audio relay.
  */
 voiceRouter.get('/ws', async (c) => {
@@ -103,150 +170,83 @@ voiceRouter.get('/ws', async (c) => {
   }
 
   const url = new URL(c.req.url);
+  const providerName = (url.searchParams.get('provider') || 'gemini').toLowerCase() as VoiceProviderName;
   const customKey = url.searchParams.get('key') || '';
   const token = url.searchParams.get('token') || '';
   const threadId = url.searchParams.get('thread_id') || '';
-  const apiKey = customKey || c.env.GEMINI_API_KEY || '';
+  const voice = url.searchParams.get('voice') || undefined;
+  const apiKey = customKey || resolveApiKey(providerName, c.env);
 
   if (!apiKey && !token) {
-    return c.text('Gemini API key or ephemeral token is required.', 401);
+    return c.text(`API key or token is required for ${providerName}.`, 401);
   }
 
-  // Construct upstream Google Gemini Live WebSocket URL
-  let upstreamWsUrl = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent';
-  if (token) {
-    upstreamWsUrl += `?access_token=${encodeURIComponent(token)}`;
-  } else {
-    upstreamWsUrl += `?key=${encodeURIComponent(apiKey)}`;
+  // Create provider adapter
+  const provider = createVoiceProvider(providerName);
+  if (!provider) {
+    return c.text(`Voice provider '${providerName}' is not available. Available: ${getAvailableProviders().join(', ')}`, 400);
   }
 
   // Create WebSocket pair for Cloudflare Edge
   const pair = new WebSocketPair();
   const [clientWs, serverWs] = Object.values(pair);
-
-  // Accept incoming client connection
   serverWs.accept();
 
-  // Async bridge task that connects upstream to Gemini
+  // Async bridge task
   const bridgeTask = async () => {
-    let upstreamWs: WebSocket | null = null;
-
     try {
-      upstreamWs = new WebSocket(upstreamWsUrl);
+      // Connect provider adapter
+      await provider.connect(
+        {
+          apiKey: apiKey || '',
+          token: token || undefined,
+          threadId,
+          voice,
+        },
+        // clientSend callback — sends data to the browser
+        (data: string) => {
+          try {
+            if (serverWs.readyState !== WebSocket.OPEN) return;
 
-      // Upstream opened
-      upstreamWs.addEventListener('open', () => {
-        try {
-          serverWs.send(JSON.stringify({ type: 'status', message: 'connected_to_gemini' }));
-        } catch {}
-      });
-
-      // Relay client messages to Gemini
-      serverWs.addEventListener('message', async (event) => {
-        try {
-          if (!upstreamWs || upstreamWs.readyState !== WebSocket.OPEN) return;
-
-          const rawData = event.data;
-          if (typeof rawData === 'string') {
-            upstreamWs.send(rawData);
-          } else {
-            upstreamWs.send(rawData);
-          }
-        } catch (err: any) {
-          console.error('Error forwarding client message to Gemini:', err);
-        }
-      });
-
-      // Relay Gemini responses to client & intercept function calls
-      upstreamWs.addEventListener('message', async (event) => {
-        try {
-          if (serverWs.readyState !== WebSocket.OPEN) return;
-
-          const rawData = event.data;
-          if (typeof rawData === 'string') {
+            // Intercept tool_call events for edge execution
             let parsed: any = null;
-            try {
-              parsed = JSON.parse(rawData);
-            } catch {}
+            try { parsed = JSON.parse(data); } catch {}
 
-            // Check if model triggered a function call
-            const toolCallPart = parsed?.serverContent?.modelTurn?.parts?.find((p: any) => p.functionCall);
-            if (toolCallPart?.functionCall) {
-              const fnCall = toolCallPart.functionCall;
-              const fnName = fnCall.name;
-              const fnArgs = fnCall.args || {};
-              const fnId = fnCall.id || 'call_1';
-
-              // Notify client of active tool execution
-              try {
-                serverWs.send(JSON.stringify({
-                  type: 'tool_executing',
-                  tool: fnName,
-                  args: fnArgs,
-                  call_id: fnId,
-                }));
-              } catch {}
-
-              // Execute tool on Cloudflare Edge
-              const toolResult = await executeEdgeTool(fnName, fnArgs, { db: c.env.DB, threadId });
-              const toolOutput = toolResult.result !== undefined ? toolResult.result : { error: toolResult.error };
-
-              // Send toolResponse back to Gemini so it can speak the result
-              if (upstreamWs && upstreamWs.readyState === WebSocket.OPEN) {
-                const responseMessage = {
-                  toolResponse: {
-                    functionResponses: [
-                      {
-                        response: { output: toolOutput },
-                        id: fnId,
-                      },
-                    ],
-                  },
-                };
-                upstreamWs.send(JSON.stringify(responseMessage));
-              }
-
-              // Notify client tool completed
-              try {
-                serverWs.send(JSON.stringify({
-                  type: 'tool_finished',
-                  tool: fnName,
-                  result: toolOutput,
-                  call_id: fnId,
-                }));
-              } catch {}
+            if (parsed?.type === 'tool_call') {
+              handleToolCall(parsed, provider, serverWs, c.env.DB, threadId);
+              // Don't forward raw tool_call to client; send structured events instead
+              return;
             }
 
-            // Always forward the original message to client
-            serverWs.send(rawData);
+            serverWs.send(data);
+          } catch {}
+        }
+      );
+
+      // Relay client messages to the provider adapter
+      serverWs.addEventListener('message', (event) => {
+        try {
+          const rawData = event.data;
+          if (typeof rawData === 'string') {
+            provider.sendToUpstream(rawData);
           } else {
-            serverWs.send(rawData);
+            provider.sendToUpstream(rawData);
           }
         } catch (err: any) {
-          console.error('Error forwarding Gemini response to client:', err);
+          console.error(`Error forwarding client message to ${providerName}:`, err);
         }
       });
 
-      // Handle close & error events
-      const cleanup = () => {
-        try { if (upstreamWs) upstreamWs.close(); } catch {}
-        try { serverWs.close(); } catch {}
-      };
-
-      upstreamWs.addEventListener('close', () => cleanup());
-      upstreamWs.addEventListener('error', (e) => {
-        console.error('Upstream Gemini WebSocket error:', e);
-        cleanup();
-      });
-      serverWs.addEventListener('close', () => cleanup());
+      // Handle close & error
+      serverWs.addEventListener('close', () => provider.disconnect());
       serverWs.addEventListener('error', (e) => {
-        console.error('Client WebSocket error:', e);
-        cleanup();
+        console.error(`Client WebSocket error (${providerName}):`, e);
+        provider.disconnect();
       });
     } catch (err: any) {
-      console.error('Failed to initialize WebSocket bridge:', err);
+      console.error(`Failed to initialize ${providerName} WebSocket bridge:`, err);
       try {
-        serverWs.send(JSON.stringify({ type: 'error', message: err.message }));
+        serverWs.send(JSON.stringify({ type: 'error', message: err.message, provider: providerName }));
         serverWs.close();
       } catch {}
     }
@@ -263,3 +263,67 @@ voiceRouter.get('/ws', async (c) => {
     webSocket: clientWs,
   });
 });
+
+/**
+ * Handle a tool_call event from any provider.
+ * Executes the tool on Cloudflare Edge and sends results back to
+ * both the provider (for continuation) and the client (for UI).
+ */
+async function handleToolCall(
+  toolCall: { callId: string; name: string; args: Record<string, any> },
+  provider: ReturnType<typeof createVoiceProvider>,
+  serverWs: WebSocket,
+  db: any,
+  threadId: string
+): Promise<void> {
+  if (!provider) return;
+
+  // Notify client: tool is executing
+  try {
+    serverWs.send(JSON.stringify({
+      type: 'tool_executing',
+      tool: toolCall.name,
+      args: toolCall.args,
+      call_id: toolCall.callId,
+    }));
+  } catch {}
+
+  // Execute tool on Edge
+  const toolResult = await executeEdgeTool(toolCall.name, toolCall.args, { db, threadId });
+  const toolOutput = toolResult.result !== undefined ? toolResult.result : { error: toolResult.error };
+
+  // Send result back to provider so it can continue generating
+  provider.sendToolResult(toolCall.callId, toolOutput);
+
+  // Notify client: tool finished
+  try {
+    serverWs.send(JSON.stringify({
+      type: 'tool_finished',
+      tool: toolCall.name,
+      result: toolOutput,
+      call_id: toolCall.callId,
+    }));
+  } catch {}
+}
+
+/**
+ * Resolve the API key for a given provider from environment variables.
+ */
+function resolveApiKey(provider: VoiceProviderName, env: Env): string {
+  switch (provider) {
+    case 'gemini':
+      return env.GEMINI_API_KEY || '';
+    case 'openai':
+      return (env as any).OPENAI_API_KEY || '';
+    case 'elevenlabs':
+      return (env as any).ELEVENLABS_API_KEY || '';
+    case 'deepgram':
+      return (env as any).DEEPGRAM_API_KEY || '';
+    case 'anthropic':
+      return (env as any).ANTHROPIC_API_KEY || '';
+    case 'groq':
+      return (env as any).GROQ_API_KEY || '';
+    default:
+      return '';
+  }
+}

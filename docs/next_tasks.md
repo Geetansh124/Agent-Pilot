@@ -5,7 +5,7 @@
 |---|---|---|
 | **Phase 1: Identity & SSO** | Google OAuth & Gmail 1-Click SSO Live Verification | Immediate |
 | **Phase 2: Edge RAG & Parsing** | Robust PDF Binary Decompression & Cloudflare Vectorize | Sprint 1 |
-| **Phase 3: Edge Agent Tools** | Function Calling & Porting Python Tools to TypeScript | Sprint 2 |
+| **Phase 3: Edge Agent Tools** | Multi-Provider Real-Time Voice (Gemini, OpenAI, ElevenLabs, Anthropic, Groq, Deepgram) & Edge Tool Porting | Sprint 2–3 |
 | **Phase 4: Object Storage** | Cloudflare R2 Raw Binary Document Storage | Sprint 3 |
 | **Phase 5: Performance & Domain** | Custom Domain, Edge Rate-Limiting & Observability | Sprint 4 |
 
@@ -54,7 +54,7 @@
 
 ---
 
-## Phase 3: TypeScript Edge Agent Tools & Gemini Live API
+## Phase 3: TypeScript Edge Agent Tools & Multi-Provider Real-Time Voice
 
 ### Task 3.1 — Native Tool Execution Engine (Completed)
 * **Priority**: High
@@ -94,6 +94,92 @@
   - [x] PWA web app manifest with standalone display, maskable icons, and dark ambient theme color `#09090b`.
   - [x] Mobile viewport & notch optimization (`viewport-fit=cover`).
   - [x] Native Android Companion packaging and CLI deployment guide using Trusted Web Activities (TWA).
+
+### Task 3.5 — Voice Provider Adapter Layer (Completed)
+* **Priority**: High
+* **Components**: `cloudflare/src/voice/`, [`cloudflare/src/routes/voice.ts`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/src/routes/voice.ts), [`frontend/app/components/VoiceFlightDeckModal.tsx`](file:///d:/Main/Projects/Agent-Pilot/frontend/app/components/VoiceFlightDeckModal.tsx)
+* **Status**: [x] Completed & Integrated
+* **Objective**: Abstract real-time voice into a provider-agnostic adapter interface so the Flight Deck UI, tool execution bridge, and audio pipeline work identically regardless of upstream backend.
+* **Acceptance Criteria**:
+  - [x] `VoiceProvider` TypeScript interface: `connect()`, `sendAudio()`, `onAudio()`, `onTranscript()`, `onToolCall()`, `disconnect()`.
+  - [x] `GeminiLiveProvider` adapter extracted from existing [`voice.ts`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/src/routes/voice.ts) WebSocket bridge.
+  - [x] Provider selection via `?provider=gemini|openai|elevenlabs|anthropic|groq|deepgram` query param on `/api/voice/ws`.
+  - [x] Flight Deck Settings drawer: provider picker cards alongside voice and latency controls.
+  - [x] Per-provider API key storage in `localStorage` (`AGENT_PILOT_{PROVIDER}_KEY`).
+
+### Task 3.6 — OpenAI Realtime API Integration (Completed)
+* **Priority**: High
+* **Components**: `cloudflare/src/voice/openai.ts`
+* **Status**: [x] Completed & Integrated
+* **Objective**: Integrate the OpenAI Realtime API (`gpt-4o-realtime-preview`) for bidirectional audio streaming with native function calling.
+* **Acceptance Criteria**:
+  - [x] `OpenAIRealtimeProvider` adapter: WebSocket to `wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview`.
+  - [x] Ephemeral session token exchange via `/api/voice/token?provider=openai`.
+  - [x] Audio format negotiation: 24kHz PCM input/output (OpenAI native format).
+  - [x] Server VAD (Voice Activity Detection) mode with configurable silence thresholds.
+  - [x] Function calling bridge: translate OpenAI tool_call events → Edge tool execution → tool_result response.
+  - [x] Voice selection: `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`.
+
+### Task 3.7 — ElevenLabs Conversational AI Integration (Completed)
+* **Priority**: Medium
+* **Components**: `cloudflare/src/voice/elevenlabs.ts`
+* **Status**: [x] Completed & Integrated
+* **Objective**: Integrate ElevenLabs Conversational AI WebSocket API for ultra-low-latency voice with premium cloned/synthetic voices.
+* **Acceptance Criteria**:
+  - [x] `ElevenLabsProvider` adapter: WebSocket to `wss://api.elevenlabs.io/v1/convai/conversation`.
+  - [x] Signed URL authentication via ElevenLabs `/v1/convai/conversation/get_signed_url`.
+  - [x] μ-law 8kHz and PCM 16kHz audio codec support with automatic format detection.
+  - [x] Agent-side tool execution: intercept `agent_response` → `tool` actions and relay to Edge tools.
+  - [x] Voice selection from ElevenLabs voice library (voice ID picker in Settings).
+  - [x] Interruption handling via `user_transcript` / `interruption` events.
+
+### Task 3.8 — Anthropic Claude Voice Integration (Completed)
+* **Priority**: Medium
+* **Components**: `cloudflare/src/voice/anthropic.ts`
+* **Status**: [x] Completed & Integrated
+* **Objective**: Integrate Anthropic's Claude real-time voice capabilities using the Messages API streaming with speech synthesis.
+* **Acceptance Criteria**:
+  - [x] `AnthropicVoiceProvider` adapter: SSE streaming to `https://api.anthropic.com/v1/messages` with `stream: true`.
+  - [x] Client-side TTS bridge: pipe Claude streaming text output → Web Speech API engine for audio playback.
+  - [x] Client-side STT bridge: browser `SpeechRecognition` / audio streaming text input to Claude.
+  - [x] Tool use integration: Claude `tool_use` blocks → Edge tool execution → `tool_result` injection.
+  - [x] Model selection: `claude-3-7-sonnet-20250219`, `claude-3-5-sonnet-20241022`, `claude-3-haiku-20240307`.
+  - [x] Upgrade path: auto-switch to native Anthropic voice WebSocket when API launches.
+
+### Task 3.9 — Groq Whisper + TTS Real-Time Pipeline (Completed)
+* **Priority**: Medium
+* **Components**: `cloudflare/src/voice/groq.ts`
+* **Status**: [x] Completed & Integrated
+* **Objective**: Build a real-time voice pipeline using Groq's ultra-fast Whisper STT and LLM inference, paired with a TTS backend for audio output.
+* **Acceptance Criteria**:
+  - [x] `GroqVoiceProvider` adapter: composable STT → LLM → TTS pipeline over REST.
+  - [x] Speech-to-Text: Groq Whisper (`whisper-large-v3-turbo`) via `/v1/audio/transcriptions` with in-memory WAV buffer generation.
+  - [x] LLM Inference: Groq `llama-3.3-70b-versatile` or `llama-3.1-8b-instant` streaming completions.
+  - [x] Text-to-Speech: pluggable TTS backend (browser Web Speech API fallback + audio chunking).
+  - [x] Tool calling via Groq function calling → Edge tool execution loop.
+  - [x] Configurable chunk duration for latency vs. accuracy trade-off.
+
+### Task 3.10 — Deepgram Voice Agent API Integration (Completed)
+* **Priority**: Low
+* **Components**: `cloudflare/src/voice/deepgram.ts`
+* **Status**: [x] Completed & Integrated
+* **Objective**: Integrate Deepgram's Voice Agent API for real-time conversational AI with best-in-class STT accuracy.
+* **Acceptance Criteria**:
+  - [x] `DeepgramVoiceProvider` adapter: WebSocket to `wss://agent.deepgram.com/agent`.
+  - [x] Configuration payload: STT model (`nova-3`), TTS model (`aura-asteria-en`), LLM provider delegation.
+  - [x] Linear16 PCM audio input at 16kHz, MP3/PCM output playback.
+  - [x] Function calling via `functions` config → Edge tool execution → `inject` response.
+  - [x] Barge-in / interruption support via Deepgram's endpointing configuration.
+
+### Task 3.11 — Unified Voice Provider Dashboard & Telemetry (Completed)
+* **Priority**: Low
+* **Components**: [`frontend/app/components/VoiceFlightDeckModal.tsx`](file:///d:/Main/Projects/Agent-Pilot/frontend/app/components/VoiceFlightDeckModal.tsx), [`frontend/app/components/VoiceSettingsDrawer.tsx`](file:///d:/Main/Projects/Agent-Pilot/frontend/app/components/VoiceSettingsDrawer.tsx), [`frontend/app/components/voiceProviders.ts`](file:///d:/Main/Projects/Agent-Pilot/frontend/app/components/voiceProviders.ts)
+* **Status**: [x] Completed & Integrated
+* **Objective**: Expose a unified Flight Deck HUD showing provider-specific metrics and voice selection.
+* **Acceptance Criteria**:
+  - [x] Real-time latency badge (ms ping/TTFB) per provider in the Flight Deck header.
+  - [x] Provider health indicator (connection state, reconnect count, error message handling).
+  - [x] Multi-engine selector with per-provider custom API key security and persona customization.
 
 ---
 

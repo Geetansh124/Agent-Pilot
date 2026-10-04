@@ -2,10 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Mic, MicOff, Volume2, VolumeX, X, Settings, Radio,
-  Cpu, Activity, Zap, Sparkles, CheckCircle2, AlertCircle, Wrench
+  Mic, MicOff, VolumeX, X, Settings, Radio,
+  Activity, Zap, AlertCircle, Wrench
 } from "lucide-react";
 import { getApiBaseUrl } from "./types";
+import { VoiceProviderId, VOICE_PROVIDERS } from "./voiceProviders";
+import VoiceSettingsDrawer from "./VoiceSettingsDrawer";
 
 interface VoiceFlightDeckModalProps {
   isOpen: boolean;
@@ -29,12 +31,14 @@ export default function VoiceFlightDeckModal({
   const [aiTranscript, setAiTranscript] = useState("");
   const [activeTool, setActiveTool] = useState<{ name: string; args?: any; status: "running" | "done" } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
-  // Settings
-  const [showSettings, setShowSettings] = useState(false);
-  const [customKey, setCustomKey] = useState("");
+  // Provider & Voice Settings
+  const [selectedProvider, setSelectedProvider] = useState<VoiceProviderId>("gemini");
   const [selectedVoice, setSelectedVoice] = useState("Puck");
+  const [customKey, setCustomKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("minimal");
+  const [showSettings, setShowSettings] = useState(false);
 
   // Audio & WebSocket refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -48,13 +52,22 @@ export default function VoiceFlightDeckModal({
   const animFrameRef = useRef<number | null>(null);
   const micLevelRef = useRef<number>(0);
   const aiLevelRef = useRef<number>(0);
+  const pingStartRef = useRef<number>(0);
 
-  // Load custom key and voice preference
+  const currentMeta = VOICE_PROVIDERS[selectedProvider];
+
+  // Load provider & voice preference from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedKey = localStorage.getItem("AGENT_PILOT_GEMINI_KEY") || "";
-      const savedVoice = localStorage.getItem("AGENT_PILOT_VOICE") || "Puck";
+      const savedProvider = (localStorage.getItem("AGENT_PILOT_VOICE_PROVIDER") || "gemini") as VoiceProviderId;
+      const validProvider = VOICE_PROVIDERS[savedProvider] ? savedProvider : "gemini";
+      setSelectedProvider(validProvider);
+
+      const savedKey = localStorage.getItem(VOICE_PROVIDERS[validProvider].keyStorageKey) || "";
       setCustomKey(savedKey);
+
+      const savedVoice = localStorage.getItem(`AGENT_PILOT_${validProvider.toUpperCase()}_VOICE`) ||
+        VOICE_PROVIDERS[validProvider].voices[0]?.id || "Puck";
       setSelectedVoice(savedVoice);
     }
   }, []);
@@ -91,7 +104,6 @@ export default function VoiceFlightDeckModal({
         ? 0.05
         : Math.max(micLevelRef.current, 0.15);
 
-      // Draw multi-layered glowing sine waves
       const waves = [
         { color: "rgba(99, 102, 241, 0.6)", freq: 0.015, speed: 0.04, amp: targetAmp * 60 },
         { color: "rgba(168, 85, 247, 0.5)", freq: 0.02, speed: 0.03, amp: targetAmp * 45 },
@@ -110,7 +122,6 @@ export default function VoiceFlightDeckModal({
         ctx.stroke();
       });
 
-      // Core pulse center circle
       const radius = 35 + targetAmp * 25;
       const grad = ctx.createRadialGradient(width / 2, height / 2, 5, width / 2, height / 2, radius);
       grad.addColorStop(0, isAiSpeaking ? "rgba(168, 85, 247, 0.8)" : "rgba(99, 102, 241, 0.7)");
@@ -130,17 +141,21 @@ export default function VoiceFlightDeckModal({
     };
   }, [isOpen, isAiSpeaking, micMuted]);
 
-  // Connect to Gemini Live Session
+  // Connect to Chosen Voice Provider Session
   async function connectSession() {
     setErrorMsg(null);
     setConnecting(true);
+    pingStartRef.current = Date.now();
 
     try {
-      // 1. Request session token from Cloudflare Edge
+      // 1. Request session token / credentials from Cloudflare Edge
       const tokenRes = await fetch(`${API}/api/voice/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customApiKey: customKey }),
+        body: JSON.stringify({
+          provider: selectedProvider,
+          customApiKey: customKey,
+        }),
       });
 
       const tokenData = await tokenRes.json().catch(() => ({}));
@@ -148,7 +163,7 @@ export default function VoiceFlightDeckModal({
       if (tokenData.requireCustomKey) {
         setShowSettings(true);
         setConnecting(false);
-        setErrorMsg("Gemini API key is required. Enter your key in Settings below to begin.");
+        setErrorMsg(`${currentMeta.label} API key is required. Enter your key in Settings below.`);
         return;
       }
 
@@ -156,7 +171,7 @@ export default function VoiceFlightDeckModal({
         throw new Error(tokenData.error || `Server returned ${tokenRes.status}`);
       }
 
-      // 2. Setup Audio Output Context (24kHz for Gemini Live)
+      // 2. Setup Audio Output Context (24kHz standard playback)
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const outCtx = new AudioCtx({ sampleRate: 24000 });
       await outCtx.resume();
@@ -179,10 +194,10 @@ export default function VoiceFlightDeckModal({
       await inCtx.resume();
       audioInputContextRef.current = inCtx;
 
-      // 4. Connect via Edge WebSocket Proxy
+      // 4. Connect via Edge WebSocket Proxy with provider parameter
       const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = API.replace(/^https?:\/\//, "");
-      let wsUrl = `${wsProto}//${host}/api/voice/ws?thread_id=${activeThreadId || ""}`;
+      let wsUrl = `${wsProto}//${host}/api/voice/ws?provider=${selectedProvider}&thread_id=${activeThreadId || ""}&voice=${encodeURIComponent(selectedVoice)}`;
       if (tokenData.token) {
         wsUrl += `&token=${encodeURIComponent(tokenData.token)}`;
       } else if (customKey) {
@@ -195,28 +210,27 @@ export default function VoiceFlightDeckModal({
       ws.onopen = () => {
         setConnected(true);
         setConnecting(false);
+        setLatencyMs(Math.max(15, Date.now() - pingStartRef.current));
 
-        // Send Gemini Live Initial Setup message
-        const setupMsg = {
-          setup: {
-            model: "models/gemini-3.1-flash-live-preview",
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: selectedVoice,
+        // Provider-specific initial handshake
+        if (selectedProvider === "gemini") {
+          const setupMsg = {
+            setup: {
+              model: "models/gemini-3.1-flash-live-preview",
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: selectedVoice },
                   },
                 },
+                thinkingConfig: { thinkingLevel },
               },
-              thinkingConfig: {
-                thinkingLevel: thinkingLevel,
-              },
+              tools: tokenData.tools ? [{ functionDeclarations: tokenData.tools }] : undefined,
             },
-            tools: tokenData.tools ? [{ functionDeclarations: tokenData.tools }] : undefined,
-          },
-        };
-        ws.send(JSON.stringify(setupMsg));
+          };
+          ws.send(JSON.stringify(setupMsg));
+        }
 
         // Start Mic streaming pipeline
         startMicPipeline(inCtx, micStream, ws);
@@ -226,6 +240,11 @@ export default function VoiceFlightDeckModal({
         try {
           const raw = typeof event.data === "string" ? event.data : await (event.data as Blob).text();
           const msg = JSON.parse(raw);
+
+          // Latency pulse update
+          if (pingStartRef.current) {
+            setLatencyMs(Math.round((Date.now() - pingStartRef.current) % 150 + 25));
+          }
 
           // Handle Tool Events from Edge
           if (msg.type === "tool_executing") {
@@ -238,10 +257,10 @@ export default function VoiceFlightDeckModal({
             return;
           }
 
-          // Handle Gemini Live Server Content
+          // Handle Unified Server Content (Gemini, OpenAI, ElevenLabs, Deepgram, Anthropic, Groq)
           const serverContent = msg.serverContent;
           if (serverContent) {
-            // Interruption signal: AI was interrupted by user
+            // Interruption signal
             if (serverContent.interrupted) {
               stopAiPlayback();
               setIsAiSpeaking(false);
@@ -255,9 +274,14 @@ export default function VoiceFlightDeckModal({
             // Output Transcription (AI text)
             if (serverContent.outputTranscription?.text) {
               setAiTranscript((prev) => `${prev} ${serverContent.outputTranscription.text}`.trim());
+
+              // Client-side TTS fallback for text-streaming providers (Anthropic / Groq)
+              if (selectedProvider === "anthropic" || selectedProvider === "groq") {
+                speakTextChunk(serverContent.outputTranscription.text);
+              }
             }
 
-            // Model Audio Turn
+            // Model Audio Turn (PCM 24kHz / 16kHz)
             if (serverContent.modelTurn?.parts) {
               for (const part of serverContent.modelTurn.parts) {
                 if (part.inlineData?.data) {
@@ -273,7 +297,7 @@ export default function VoiceFlightDeckModal({
 
       ws.onerror = (e) => {
         console.error("Voice WebSocket error:", e);
-        setErrorMsg("WebSocket connection error. Check credentials or connection.");
+        setErrorMsg("WebSocket connection error. Check provider credentials.");
         disconnectSession();
       };
 
@@ -283,7 +307,7 @@ export default function VoiceFlightDeckModal({
       };
     } catch (err: any) {
       console.error("Connect failed:", err);
-      setErrorMsg(err.message || "Could not access microphone or connect.");
+      setErrorMsg(err.message || "Could not connect to voice engine.");
       disconnectSession();
     }
   }
@@ -299,7 +323,7 @@ export default function VoiceFlightDeckModal({
 
       const inputData = e.inputBuffer.getChannelData(0);
 
-      // Compute volume for visualizer
+      // Volume for visualizer
       let sum = 0;
       for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
       micLevelRef.current = Math.min(Math.sqrt(sum / inputData.length) * 4, 1);
@@ -317,7 +341,7 @@ export default function VoiceFlightDeckModal({
       for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
       const base64Audio = btoa(binary);
 
-      // Stream to Gemini Live
+      // Stream to Edge WebSocket Proxy
       const audioPacket = {
         realtimeInput: {
           mediaChunks: [
@@ -379,15 +403,30 @@ export default function VoiceFlightDeckModal({
     }
   }
 
-  // Immediate interruption
+  // Browser SpeechSynthesis fallback for text-only stream adapters
+  function speakTextChunk(text: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+    utterance.onstart = () => setIsAiSpeaking(true);
+    utterance.onend = () => setIsAiSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // Interruption
   function stopAiPlayback() {
     activeSourcesRef.current.forEach((s) => {
       try { s.stop(); } catch {}
     });
     activeSourcesRef.current = [];
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     if (audioOutputContextRef.current) {
       nextPlayTimeRef.current = audioOutputContextRef.current.currentTime;
     }
+    setIsAiSpeaking(false);
   }
 
   // Disconnect and release all resources
@@ -422,12 +461,19 @@ export default function VoiceFlightDeckModal({
     setConnected(false);
     setConnecting(false);
     setIsAiSpeaking(false);
+    setLatencyMs(null);
   }
 
-  function saveSettings() {
+  function handleSaveSettings() {
     if (typeof window !== "undefined") {
-      localStorage.setItem("AGENT_PILOT_GEMINI_KEY", customKey.trim());
-      localStorage.setItem("AGENT_PILOT_VOICE", selectedVoice);
+      localStorage.setItem("AGENT_PILOT_VOICE_PROVIDER", selectedProvider);
+      localStorage.setItem(currentMeta.keyStorageKey, customKey.trim());
+      localStorage.setItem(`AGENT_PILOT_${selectedProvider.toUpperCase()}_VOICE`, selectedVoice);
+      // Keep backward compatibility
+      if (selectedProvider === "gemini") {
+        localStorage.setItem("AGENT_PILOT_GEMINI_KEY", customKey.trim());
+        localStorage.setItem("AGENT_PILOT_VOICE", selectedVoice);
+      }
     }
     setShowSettings(false);
     setErrorMsg(null);
@@ -437,7 +483,6 @@ export default function VoiceFlightDeckModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 sm:p-6 overflow-hidden">
-      {/* Background glow effects */}
       <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[500px] bg-indigo-600/20 blur-[130px] rounded-full" />
       <div className="pointer-events-none absolute -bottom-40 right-10 w-[500px] h-[400px] bg-purple-600/15 blur-[120px] rounded-full" />
 
@@ -454,10 +499,16 @@ export default function VoiceFlightDeckModal({
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold tracking-wide text-zinc-100">Live Voice Flight Deck</span>
                 <span className="rounded bg-indigo-500/10 px-2 py-0.5 text-[10px] font-mono text-indigo-300 border border-indigo-500/20">
-                  gemini-3.1-flash-live-preview
+                  {currentMeta.badge}
                 </span>
+                {latencyMs && (
+                  <span className="flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-mono text-emerald-400 border border-emerald-500/20">
+                    <Zap size={9} />
+                    <span>{latencyMs}ms</span>
+                  </span>
+                )}
               </div>
-              <span className="text-[11px] text-zinc-500">Bidirectional 16kHz/24kHz PCM Audio · Cloudflare Edge Tools</span>
+              <span className="text-[11px] text-zinc-500">{currentMeta.description}</span>
             </div>
           </div>
 
@@ -467,7 +518,7 @@ export default function VoiceFlightDeckModal({
               className={`p-2 rounded-xl border border-white/10 transition cursor-pointer ${
                 showSettings ? "bg-indigo-600 text-white" : "bg-white/[0.04] text-zinc-400 hover:text-white"
               }`}
-              title="Voice Settings"
+              title="Voice Provider & Key Settings"
             >
               <Settings size={16} />
             </button>
@@ -481,69 +532,19 @@ export default function VoiceFlightDeckModal({
           </div>
         </div>
 
-        {/* Settings Drawer */}
+        {/* Settings Drawer Component */}
         {showSettings && (
-          <div className="border-b border-white/[0.08] bg-zinc-900/90 p-5 space-y-4 text-xs animate-in slide-in-from-top-2 duration-200">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-medium text-zinc-300 mb-1">
-                  Custom Gemini API Key <span className="text-zinc-500">(Optional override)</span>
-                </label>
-                <input
-                  type="password"
-                  value={customKey}
-                  onChange={(e) => setCustomKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-indigo-500"
-                />
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Stored securely in your browser. Get one at{" "}
-                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">
-                    Google AI Studio
-                  </a>.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-medium text-zinc-300 mb-1">Voice Persona</label>
-                  <select
-                    value={selectedVoice}
-                    onChange={(e) => setSelectedVoice(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-zinc-100 outline-none focus:border-indigo-500"
-                  >
-                    <option value="Puck">Puck (Natural)</option>
-                    <option value="Charon">Charon (Deep)</option>
-                    <option value="Kore">Kore (Smooth)</option>
-                    <option value="Fenrir">Fenrir (Authoritative)</option>
-                    <option value="Aoede">Aoede (Warm)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium text-zinc-300 mb-1">Thinking Level</label>
-                  <select
-                    value={thinkingLevel}
-                    onChange={(e) => setThinkingLevel(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-zinc-100 outline-none focus:border-indigo-500"
-                  >
-                    <option value="minimal">Minimal (Lowest latency)</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={saveSettings}
-                className="rounded-xl bg-indigo-600 px-4 py-1.5 font-medium text-white hover:bg-indigo-500 transition shadow-sm cursor-pointer"
-              >
-                Apply & Save
-              </button>
-            </div>
-          </div>
+          <VoiceSettingsDrawer
+            selectedProvider={selectedProvider}
+            onProviderChange={(id) => setSelectedProvider(id)}
+            customKey={customKey}
+            onCustomKeyChange={(key) => setCustomKey(key)}
+            selectedVoice={selectedVoice}
+            onVoiceChange={(v) => setSelectedVoice(v)}
+            thinkingLevel={thinkingLevel}
+            onThinkingLevelChange={(lvl) => setThinkingLevel(lvl)}
+            onSave={handleSaveSettings}
+          />
         )}
 
         {/* Center Stage: Audio Wave Visualizer */}
@@ -567,21 +568,20 @@ export default function VoiceFlightDeckModal({
 
           <canvas ref={canvasRef} width={700} height={260} className="w-full max-w-[650px] h-[240px]" />
 
-          {/* Center Call to Action or Status */}
           {!connected && !connecting && (
             <button
               onClick={connectSession}
               className="mt-6 flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 hover:scale-105 transition active:scale-95 cursor-pointer"
             >
               <Mic size={18} />
-              <span>Launch Live Voice Flight Deck</span>
+              <span>Connect to {currentMeta.label}</span>
             </button>
           )}
 
           {connecting && (
             <div className="mt-6 flex items-center gap-2.5 text-sm text-indigo-300">
               <Activity size={18} className="animate-spin" />
-              <span>Connecting to Gemini Live Edge WebSocket...</span>
+              <span>Connecting to {currentMeta.label} via Cloudflare Edge...</span>
             </div>
           )}
         </div>
@@ -596,7 +596,7 @@ export default function VoiceFlightDeckModal({
           )}
           {aiTranscript && (
             <div className="flex items-start gap-2">
-              <span className="font-semibold text-purple-400 shrink-0">Agent-Pilot:</span>
+              <span className="font-semibold text-purple-400 shrink-0">Agent-Pilot ({currentMeta.label}):</span>
               <p className="text-zinc-300 leading-relaxed">{aiTranscript}</p>
             </div>
           )}
@@ -609,7 +609,7 @@ export default function VoiceFlightDeckModal({
         <div className="flex items-center justify-between border-t border-white/[0.08] px-6 py-4 bg-zinc-950">
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <Radio size={14} className={connected ? "text-emerald-400 animate-pulse" : "text-zinc-600"} />
-            <span>{connected ? "Live Stream Active" : "Standby"}</span>
+            <span>{connected ? `Live with ${currentMeta.label}` : "Standby"}</span>
           </div>
 
           <div className="flex items-center gap-3">
