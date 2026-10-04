@@ -73,4 +73,18 @@ export function getApiBaseUrl(): string {
   return "http://localhost:8000";
 }
 
+export function getVoiceApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    if (window.location.hostname.endsWith(".workers.dev") || window.location.hostname.endsWith(".pages.dev")) {
+      return "";
+    }
+  }
+  if (process.env.NEXT_PUBLIC_VOICE_API_URL) {
+    return process.env.NEXT_PUBLIC_VOICE_API_URL.replace(/\/+$/, "");
+  }
+  // If running locally, route voice to deployed Cloudflare Edge worker proxy
+  return "https://agent-pilot.soapy-pint.workers.dev";
+}
+
+
 

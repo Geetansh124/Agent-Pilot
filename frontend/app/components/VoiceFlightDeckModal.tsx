@@ -5,9 +5,10 @@ import {
   Mic, MicOff, VolumeX, X, Settings, Radio,
   Activity, Zap, AlertCircle, Wrench
 } from "lucide-react";
-import { getApiBaseUrl } from "./types";
+import { getVoiceApiBaseUrl } from "./types";
 import { VoiceProviderId, VOICE_PROVIDERS } from "./voiceProviders";
 import VoiceSettingsDrawer from "./VoiceSettingsDrawer";
+import QuantumVoiceVisualizer from "./QuantumVoiceVisualizer";
 
 interface VoiceFlightDeckModalProps {
   isOpen: boolean;
@@ -20,7 +21,7 @@ export default function VoiceFlightDeckModal({
   onClose,
   activeThreadId,
 }: VoiceFlightDeckModalProps) {
-  const API = getApiBaseUrl();
+  const API = getVoiceApiBaseUrl();
 
   // Session & Connection state
   const [connected, setConnected] = useState(false);
@@ -48,15 +49,13 @@ export default function VoiceFlightDeckModal({
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const nextPlayTimeRef = useRef<number>(0);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animFrameRef = useRef<number | null>(null);
   const micLevelRef = useRef<number>(0);
   const aiLevelRef = useRef<number>(0);
   const pingStartRef = useRef<number>(0);
 
   const currentMeta = VOICE_PROVIDERS[selectedProvider];
 
-  // Load provider & voice preference from localStorage
+  // Load preferences from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedProvider = (localStorage.getItem("AGENT_PILOT_VOICE_PROVIDER") || "gemini") as VoiceProviderId;
@@ -82,65 +81,6 @@ export default function VoiceFlightDeckModal({
     };
   }, [isOpen]);
 
-  // Audio Visualizer loop
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let phase = 0;
-
-    const render = () => {
-      const width = canvas.width;
-      const height = canvas.height;
-      ctx.clearRect(0, 0, width, height);
-
-      const targetAmp = isAiSpeaking
-        ? Math.max(aiLevelRef.current, 0.45)
-        : micMuted
-        ? 0.05
-        : Math.max(micLevelRef.current, 0.15);
-
-      const waves = [
-        { color: "rgba(99, 102, 241, 0.6)", freq: 0.015, speed: 0.04, amp: targetAmp * 60 },
-        { color: "rgba(168, 85, 247, 0.5)", freq: 0.02, speed: 0.03, amp: targetAmp * 45 },
-        { color: "rgba(56, 189, 248, 0.7)", freq: 0.025, speed: 0.06, amp: targetAmp * 30 },
-      ];
-
-      waves.forEach((w) => {
-        ctx.beginPath();
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = w.color;
-        for (let x = 0; x < width; x += 3) {
-          const y = height / 2 + Math.sin(x * w.freq + phase * w.speed) * w.amp;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      });
-
-      const radius = 35 + targetAmp * 25;
-      const grad = ctx.createRadialGradient(width / 2, height / 2, 5, width / 2, height / 2, radius);
-      grad.addColorStop(0, isAiSpeaking ? "rgba(168, 85, 247, 0.8)" : "rgba(99, 102, 241, 0.7)");
-      grad.addColorStop(1, "rgba(99, 102, 241, 0)");
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      phase += 1;
-      animFrameRef.current = requestAnimationFrame(render);
-    };
-
-    render();
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [isOpen, isAiSpeaking, micMuted]);
-
   // Connect to Chosen Voice Provider Session
   async function connectSession() {
     setErrorMsg(null);
@@ -154,16 +94,17 @@ export default function VoiceFlightDeckModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: selectedProvider,
-          customApiKey: customKey,
+          customApiKey: customKey.trim(),
         }),
       });
 
       const tokenData = await tokenRes.json().catch(() => ({}));
 
+      // If provider requires custom key and none is provided, prompt user directly
       if (tokenData.requireCustomKey) {
         setShowSettings(true);
         setConnecting(false);
-        setErrorMsg(`${currentMeta.label} API key is required. Enter your key in Settings below.`);
+        setErrorMsg(`${currentMeta.label} requires an API key. Please enter your key in Settings below or click 'Get Key'.`);
         return;
       }
 
@@ -194,14 +135,20 @@ export default function VoiceFlightDeckModal({
       await inCtx.resume();
       audioInputContextRef.current = inCtx;
 
-      // 4. Connect via Edge WebSocket Proxy with provider parameter
-      const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = API.replace(/^https?:\/\//, "");
-      let wsUrl = `${wsProto}//${host}/api/voice/ws?provider=${selectedProvider}&thread_id=${activeThreadId || ""}&voice=${encodeURIComponent(selectedVoice)}`;
+      // 4. Robust WebSocket URL construction (handles empty base on workers.dev origin)
+      let wsBase = "";
+      if (API && API.startsWith("http")) {
+        wsBase = API.replace(/^http/, "ws");
+      } else if (typeof window !== "undefined") {
+        const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+        wsBase = `${wsProto}//${window.location.host}`;
+      }
+
+      let wsUrl = `${wsBase}/api/voice/ws?provider=${selectedProvider}&thread_id=${activeThreadId || ""}&voice=${encodeURIComponent(selectedVoice)}`;
       if (tokenData.token) {
         wsUrl += `&token=${encodeURIComponent(tokenData.token)}`;
-      } else if (customKey) {
-        wsUrl += `&key=${encodeURIComponent(customKey)}`;
+      } else if (customKey.trim()) {
+        wsUrl += `&key=${encodeURIComponent(customKey.trim())}`;
       }
 
       const ws = new WebSocket(wsUrl);
@@ -257,7 +204,7 @@ export default function VoiceFlightDeckModal({
             return;
           }
 
-          // Handle Unified Server Content (Gemini, OpenAI, ElevenLabs, Deepgram, Anthropic, Groq)
+          // Handle Unified Server Content
           const serverContent = msg.serverContent;
           if (serverContent) {
             // Interruption signal
@@ -275,7 +222,7 @@ export default function VoiceFlightDeckModal({
             if (serverContent.outputTranscription?.text) {
               setAiTranscript((prev) => `${prev} ${serverContent.outputTranscription.text}`.trim());
 
-              // Client-side TTS fallback for text-streaming providers (Anthropic / Groq)
+              // Client-side TTS fallback for text-streaming providers
               if (selectedProvider === "anthropic" || selectedProvider === "groq") {
                 speakTextChunk(serverContent.outputTranscription.text);
               }
@@ -297,7 +244,8 @@ export default function VoiceFlightDeckModal({
 
       ws.onerror = (e) => {
         console.error("Voice WebSocket error:", e);
-        setErrorMsg("WebSocket connection error. Check provider credentials.");
+        setErrorMsg(`Connection to ${currentMeta.label} failed. Please verify your API key in Settings.`);
+        setShowSettings(true);
         disconnectSession();
       };
 
@@ -307,7 +255,7 @@ export default function VoiceFlightDeckModal({
       };
     } catch (err: any) {
       console.error("Connect failed:", err);
-      setErrorMsg(err.message || "Could not connect to voice engine.");
+      setErrorMsg(err.message || `Could not connect to ${currentMeta.label}.`);
       disconnectSession();
     }
   }
@@ -323,7 +271,7 @@ export default function VoiceFlightDeckModal({
 
       const inputData = e.inputBuffer.getChannelData(0);
 
-      // Volume for visualizer
+      // Volume calculation for visualizer
       let sum = 0;
       for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
       micLevelRef.current = Math.min(Math.sqrt(sum / inputData.length) * 4, 1);
@@ -389,7 +337,7 @@ export default function VoiceFlightDeckModal({
 
       activeSourcesRef.current.push(source);
       setIsAiSpeaking(true);
-      aiLevelRef.current = 0.8;
+      aiLevelRef.current = 0.85;
 
       source.onended = () => {
         activeSourcesRef.current = activeSourcesRef.current.filter((s) => s !== source);
@@ -469,7 +417,6 @@ export default function VoiceFlightDeckModal({
       localStorage.setItem("AGENT_PILOT_VOICE_PROVIDER", selectedProvider);
       localStorage.setItem(currentMeta.keyStorageKey, customKey.trim());
       localStorage.setItem(`AGENT_PILOT_${selectedProvider.toUpperCase()}_VOICE`, selectedVoice);
-      // Keep backward compatibility
       if (selectedProvider === "gemini") {
         localStorage.setItem("AGENT_PILOT_GEMINI_KEY", customKey.trim());
         localStorage.setItem("AGENT_PILOT_VOICE", selectedVoice);
@@ -487,7 +434,7 @@ export default function VoiceFlightDeckModal({
       <div className="pointer-events-none absolute -bottom-40 right-10 w-[500px] h-[400px] bg-purple-600/15 blur-[120px] rounded-full" />
 
       {/* Main Glass Flight Deck Container */}
-      <div className="relative flex flex-col h-full max-h-[850px] w-full max-w-4xl rounded-3xl border border-white/10 bg-zinc-950/80 shadow-2xl overflow-hidden">
+      <div className="relative flex flex-col h-full max-h-[850px] w-full max-w-4xl rounded-3xl border border-white/10 bg-zinc-950/85 shadow-2xl overflow-hidden backdrop-blur-2xl">
         {/* Header HUD */}
         <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
           <div className="flex items-center gap-3">
@@ -532,7 +479,7 @@ export default function VoiceFlightDeckModal({
           </div>
         </div>
 
-        {/* Settings Drawer Component */}
+        {/* Settings Drawer */}
         {showSettings && (
           <VoiceSettingsDrawer
             selectedProvider={selectedProvider}
@@ -547,18 +494,27 @@ export default function VoiceFlightDeckModal({
           />
         )}
 
-        {/* Center Stage: Audio Wave Visualizer */}
+        {/* Center Stage: Quantum Fluid Orb & Waves Visualizer */}
         <div className="relative flex-1 flex flex-col items-center justify-center p-6 overflow-hidden">
           {errorMsg && (
-            <div className="absolute top-4 mx-auto flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-300 max-w-lg shadow-lg">
-              <AlertCircle size={15} className="shrink-0 text-red-400" />
-              <span>{errorMsg}</span>
+            <div className="absolute top-4 z-10 mx-auto flex items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200 max-w-xl shadow-xl backdrop-blur-md">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0 text-amber-400" />
+                <span>{errorMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="shrink-0 rounded-lg bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/30 transition border border-amber-500/30 cursor-pointer"
+              >
+                Open Settings
+              </button>
             </div>
           )}
 
           {/* Active Tool Invocation HUD Badge */}
           {activeTool && (
-            <div className="absolute top-14 mx-auto flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/15 px-4 py-1.5 text-xs text-indigo-200 shadow-xl animate-pulse">
+            <div className="absolute top-14 z-10 mx-auto flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/15 px-4 py-1.5 text-xs text-indigo-200 shadow-xl animate-pulse backdrop-blur-md">
               <Wrench size={13} className="animate-spin text-indigo-400" />
               <span>
                 Edge Tool Executing: <strong className="font-mono text-white">{activeTool.name}</strong>
@@ -566,12 +522,21 @@ export default function VoiceFlightDeckModal({
             </div>
           )}
 
-          <canvas ref={canvasRef} width={700} height={260} className="w-full max-w-[650px] h-[240px]" />
+          {/* Quantum Fluid Orb & Multi-Harmonic Waves Canvas */}
+          <QuantumVoiceVisualizer
+            isAiSpeaking={isAiSpeaking}
+            micMuted={micMuted}
+            connected={connected}
+            connecting={connecting}
+            provider={selectedProvider}
+            micLevelRef={micLevelRef}
+            aiLevelRef={aiLevelRef}
+          />
 
           {!connected && !connecting && (
             <button
               onClick={connectSession}
-              className="mt-6 flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 hover:scale-105 transition active:scale-95 cursor-pointer"
+              className="mt-4 flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 hover:scale-105 transition active:scale-95 cursor-pointer"
             >
               <Mic size={18} />
               <span>Connect to {currentMeta.label}</span>
@@ -579,7 +544,7 @@ export default function VoiceFlightDeckModal({
           )}
 
           {connecting && (
-            <div className="mt-6 flex items-center gap-2.5 text-sm text-indigo-300">
+            <div className="mt-4 flex items-center gap-2.5 text-sm text-indigo-300">
               <Activity size={18} className="animate-spin" />
               <span>Connecting to {currentMeta.label} via Cloudflare Edge...</span>
             </div>
