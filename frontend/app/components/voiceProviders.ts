@@ -3,6 +3,7 @@
  */
 
 export type VoiceProviderId =
+  | 'web_speech'
   | 'gemini'
   | 'openai'
   | 'elevenlabs'
@@ -30,6 +31,19 @@ export interface VoiceProviderMeta {
 }
 
 export const VOICE_PROVIDERS: Record<VoiceProviderId, VoiceProviderMeta> = {
+  web_speech: {
+    id: 'web_speech',
+    label: 'Native Browser Voice',
+    badge: 'Free • Web Speech',
+    description: 'Instant zero-configuration speech recognition and voice responses built into your browser',
+    defaultModel: 'agent-pilot-edge',
+    voices: [
+      { id: 'default', name: 'Browser Voice', desc: 'System natural voice' },
+    ],
+    keyPlaceholder: 'No API key needed (100% Free)',
+    keyHelpUrl: '',
+    keyStorageKey: 'AGENT_PILOT_WEB_SPEECH_KEY',
+  },
   gemini: {
     id: 'gemini',
     label: 'Google Gemini Live',

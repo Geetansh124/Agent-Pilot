@@ -77,38 +77,49 @@ export default function VoiceSettingsDrawer({
           <div className="flex items-center justify-between mb-1">
             <label className="font-medium text-zinc-300 flex items-center gap-1.5">
               <Key size={12} className="text-indigo-400" />
-              <span>{currentMeta.label} API Key</span>
-              <span className="text-zinc-500 text-[10px]">(Optional override)</span>
+              <span>{currentMeta.label} {selectedProvider === "web_speech" ? "" : "API Key"}</span>
+              {selectedProvider !== "web_speech" && <span className="text-zinc-500 text-[10px]">(Optional override)</span>}
             </label>
-            <a
-              href={currentMeta.keyHelpUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] text-indigo-400 hover:underline flex items-center gap-0.5"
-            >
-              <span>Get Key</span>
-              <ExternalLink size={10} />
-            </a>
+            {currentMeta.keyHelpUrl && (
+              <a
+                href={currentMeta.keyHelpUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-indigo-400 hover:underline flex items-center gap-0.5"
+              >
+                <span>Get Key</span>
+                <ExternalLink size={10} />
+              </a>
+            )}
           </div>
-          <div className="relative flex items-center">
-            <input
-              type={showKey ? "text" : "password"}
-              value={customKey}
-              onChange={(e) => onCustomKeyChange(e.target.value)}
-              placeholder={currentMeta.keyPlaceholder}
-              className="w-full rounded-xl border border-white/10 bg-black/40 pl-3 pr-10 py-2 text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-indigo-500 text-xs font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-2.5 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
-            >
-              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-          </div>
-          <p className="mt-1 text-[10px] text-zinc-500">
-            Stored securely in local browser storage under <code className="text-zinc-400">{currentMeta.keyStorageKey}</code>.
-          </p>
+          {selectedProvider === "web_speech" ? (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-300 text-[11px] flex items-center gap-2">
+              <Sparkles size={14} className="text-emerald-400 shrink-0" />
+              <span>100% Free & Built-in! Uses your browser's native speech recognition and natural voice synthesizer with zero setup.</span>
+            </div>
+          ) : (
+            <>
+              <div className="relative flex items-center">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={customKey}
+                  onChange={(e) => onCustomKeyChange(e.target.value)}
+                  placeholder={currentMeta.keyPlaceholder}
+                  className="w-full rounded-xl border border-white/10 bg-black/40 pl-3 pr-10 py-2 text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-indigo-500 text-xs font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2.5 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+                >
+                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <p className="mt-1 text-[10px] text-zinc-500">
+                Stored securely in local browser storage under <code className="text-zinc-400">{currentMeta.keyStorageKey}</code>.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Persona & Options */}

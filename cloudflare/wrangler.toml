@@ -2,6 +2,8 @@ name = "agent-pilot"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+account_id = "a359d4393f13d35736192c2cff86a44a"
+
 
 [assets]
 directory = "../frontend/out"

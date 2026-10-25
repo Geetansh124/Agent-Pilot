@@ -16,6 +16,34 @@ interface VoiceFlightDeckModalProps {
   activeThreadId?: string;
 }
 
+function formatVoiceTranscript(raw: string): string {
+  if (!raw) return "";
+  return raw
+    .replace(/^#+\s*/gm, "") // remove heading hash tags like ###
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // remove bold asterisks
+    .replace(/\*([^*]+)\*/g, "$1") // remove italic asterisks
+    .replace(/^[\*\-]\s+/gm, "") // remove bullet asterisks/dashes
+    .replace(/`([^`]+)`/g, "$1") // remove inline code backticks
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+function cleanUserSpeech(raw: string): string {
+  if (!raw) return "";
+  let clean = raw.trim();
+  // Auto-correct common speech-to-text phonetic typos
+  clean = clean.replace(/\bproperny\b/gi, "properly");
+  clean = clean.replace(/\bteh\b/gi, "the");
+  clean = clean.replace(/\brecieve\b/gi, "receive");
+  clean = clean.replace(/\bseperate\b/gi, "separate");
+  clean = clean.replace(/\buntill\b/gi, "until");
+  // Capitalize sentence start
+  if (clean.length > 0) {
+    clean = clean.charAt(0).toUpperCase() + clean.slice(1);
+  }
+  return clean;
+}
+
 export default function VoiceFlightDeckModal({
   isOpen,
   onClose,
@@ -53,20 +81,25 @@ export default function VoiceFlightDeckModal({
   const aiLevelRef = useRef<number>(0);
   const pingStartRef = useRef<number>(0);
 
+  // Web Speech API refs
+  const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const isWebSpeechSpeakingRef = useRef<boolean>(false);
+
   const currentMeta = VOICE_PROVIDERS[selectedProvider];
 
   // Load preferences from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedProvider = (localStorage.getItem("AGENT_PILOT_VOICE_PROVIDER") || "gemini") as VoiceProviderId;
-      const validProvider = VOICE_PROVIDERS[savedProvider] ? savedProvider : "gemini";
+      const savedProvider = (localStorage.getItem("AGENT_PILOT_VOICE_PROVIDER") || "web_speech") as VoiceProviderId;
+      const validProvider = VOICE_PROVIDERS[savedProvider] ? savedProvider : "web_speech";
       setSelectedProvider(validProvider);
 
       const savedKey = localStorage.getItem(VOICE_PROVIDERS[validProvider].keyStorageKey) || "";
       setCustomKey(savedKey);
 
       const savedVoice = localStorage.getItem(`AGENT_PILOT_${validProvider.toUpperCase()}_VOICE`) ||
-        VOICE_PROVIDERS[validProvider].voices[0]?.id || "Puck";
+        VOICE_PROVIDERS[validProvider].voices[0]?.id || "default";
       setSelectedVoice(savedVoice);
     }
   }, []);
@@ -81,19 +114,300 @@ export default function VoiceFlightDeckModal({
     };
   }, [isOpen]);
 
+  // Execute a conversational turn using Free Web Speech API + backend Chat API
+  // Execute a conversational turn using Free Web Speech API + backend Chat API
+  async function executeWebSpeechTurn(queryText: string) {
+    if (!queryText.trim() || isWebSpeechSpeakingRef.current) return;
+    isWebSpeechSpeakingRef.current = true;
+
+    try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+
+      setAiTranscript("Listening...");
+      setIsAiSpeaking(true);
+      aiLevelRef.current = 0.6;
+
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      const token = typeof window !== "undefined"
+        ? (localStorage.getItem("agent_pilot_token") || localStorage.getItem("docupilot_token"))
+        : null;
+
+      let pendingUtterances = 0;
+      let streamFinished = false;
+
+      const finishSpeaking = () => {
+        setIsAiSpeaking(false);
+        aiLevelRef.current = 0;
+        isWebSpeechSpeakingRef.current = false;
+        setUserTranscript("");
+        if (!micMuted && recognitionRef.current) {
+          try {
+            recognitionRef.current.abort();
+            setTimeout(() => {
+              try { recognitionRef.current?.start(); } catch {}
+            }, 100);
+          } catch {
+            try { recognitionRef.current.start(); } catch {}
+          }
+        }
+      };
+
+      const speakSentence = (sentenceText: string) => {
+        const clean = sentenceText.replace(/[*#`_\[\]()]/g, " ").replace(/\s+/g, " ").trim();
+        if (!clean || !/[a-zA-Z0-9]/.test(clean)) return;
+
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          pendingUtterances++;
+          const utter = new SpeechSynthesisUtterance(clean);
+          utter.rate = 1.05;
+          utter.pitch = 1.0;
+          utter.onend = () => {
+            pendingUtterances = Math.max(0, pendingUtterances - 1);
+            if (streamFinished && pendingUtterances === 0) {
+              finishSpeaking();
+            }
+          };
+          utter.onerror = () => {
+            pendingUtterances = Math.max(0, pendingUtterances - 1);
+            if (streamFinished && pendingUtterances === 0) {
+              finishSpeaking();
+            }
+          };
+          window.speechSynthesis.speak(utter);
+        }
+      };
+
+      // Connect to real-time streaming endpoint
+      const res = await fetch(`${API}/api/chat/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          message: queryText,
+          thread_id: activeThreadId || undefined,
+          mode: "voice",
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Chat API error (${res.status})`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error("No readable stream response");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullTranscript = "";
+      let spokenOffset = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.type === "token" && parsed.content) {
+              fullTranscript += parsed.content;
+              setAiTranscript(fullTranscript);
+
+              // Check if a complete sentence or clause has formed
+              const unspoken = fullTranscript.slice(spokenOffset);
+              const sentenceMatch = unspoken.match(/^([\s\S]*?[.!?\n])(?:\s+|$)/);
+              if (sentenceMatch && sentenceMatch[1].trim().length > 2) {
+                const sentence = sentenceMatch[1].trim();
+                spokenOffset += sentenceMatch[0].length;
+                speakSentence(sentence);
+              }
+            } else if (parsed.type === "done") {
+              break;
+            }
+          } catch {
+            // Non-JSON SSE line
+          }
+        }
+      }
+
+      // Speak any remaining unspoken tail
+      const leftover = fullTranscript.slice(spokenOffset).trim();
+      if (leftover) {
+        speakSentence(leftover);
+      }
+
+      streamFinished = true;
+      if (pendingUtterances === 0) {
+        finishSpeaking();
+      }
+    } catch (err: any) {
+      setAiTranscript(`Could not generate response: ${err.message}`);
+      setIsAiSpeaking(false);
+      aiLevelRef.current = 0;
+      isWebSpeechSpeakingRef.current = false;
+      if (!micMuted && recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch {}
+      }
+    }
+  }
+
   // Connect to Chosen Voice Provider Session
-  async function connectSession() {
+  async function connectSession(overrideProvider?: VoiceProviderId) {
+    const providerToUse = overrideProvider || selectedProvider;
     setErrorMsg(null);
     setConnecting(true);
     pingStartRef.current = Date.now();
 
     try {
+      // Free Native Browser Voice mode via Web Speech API
+      if (providerToUse === "web_speech") {
+        const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRec) {
+          throw new Error("Speech recognition is not supported in this browser. Please use Google Chrome, Microsoft Edge, or Safari.");
+        }
+
+        const rec = new SpeechRec();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "en-US";
+        rec.maxAlternatives = 3;
+        recognitionRef.current = rec;
+
+        rec.onstart = () => {
+          setConnected(true);
+          setConnecting(false);
+          setLatencyMs(18);
+        };
+
+        rec.onresult = (e: any) => {
+          let fullTranscript = "";
+          let hasFinal = false;
+
+          for (let i = 0; i < e.results.length; i++) {
+            const item = e.results[i];
+            if (item && item[0]) {
+              fullTranscript += item[0].transcript + " ";
+              if (item.isFinal) hasFinal = true;
+            }
+          }
+
+          const cleaned = cleanUserSpeech(fullTranscript);
+          if (cleaned) {
+            setUserTranscript(cleaned);
+            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+            // Intelligent natural pause detection: 1000ms after final phrase, 2200ms on interim thought
+            const debounceMs = hasFinal ? 1000 : 2200;
+            silenceTimerRef.current = setTimeout(() => {
+              if (!isWebSpeechSpeakingRef.current && cleaned) {
+                void executeWebSpeechTurn(cleaned);
+              }
+            }, debounceMs);
+          }
+        };
+
+        rec.onerror = (e: any) => {
+          console.warn("Speech recognition error:", e.error);
+          if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+            setErrorMsg("Microphone permission was denied. Please allow microphone access in your browser address bar.");
+            disconnectSession();
+          } else if (e.error === "network") {
+            setErrorMsg("Speech recognition network error. Please verify your connection.");
+            disconnectSession();
+          }
+        };
+
+        rec.onend = () => {
+          if (!micMuted && !isWebSpeechSpeakingRef.current && recognitionRef.current) {
+            try { rec.start(); } catch {}
+          }
+        };
+
+        // Start listening
+        try {
+          rec.start();
+        } catch (startErr: any) {
+          console.warn("rec.start error:", startErr);
+        }
+        setConnected(true);
+        setConnecting(false);
+        setLatencyMs(18);
+
+        // Initial audio greeting so user immediately hears voice working
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          const greeting = new SpeechSynthesisUtterance("Hello! I am listening. How can I help you today?");
+          greeting.rate = 1.05;
+          greeting.pitch = 1.0;
+          setIsAiSpeaking(true);
+          setAiTranscript("Hello! I am listening. How can I help you today?");
+          greeting.onend = () => {
+            setIsAiSpeaking(false);
+          };
+          window.speechSynthesis.speak(greeting);
+        }
+
+        // Non-blocking mic visualizer setup in background
+        void (async () => {
+          try {
+            if (navigator?.mediaDevices?.getUserMedia) {
+              const micStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                },
+              }).catch(() => null);
+              if (!micStream) return;
+              micStreamRef.current = micStream;
+              const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+              if (!AudioCtx) return;
+              const inCtx = new AudioCtx();
+              audioInputContextRef.current = inCtx;
+              const source = inCtx.createMediaStreamSource(micStream);
+              const analyser = inCtx.createAnalyser();
+              analyser.fftSize = 256;
+              source.connect(analyser);
+              const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+              const updateVolume = () => {
+                if (!micStreamRef.current) return;
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                micLevelRef.current = Math.min((sum / dataArray.length) / 80, 1);
+                requestAnimationFrame(updateVolume);
+              };
+              updateVolume();
+            }
+          } catch {}
+        })();
+
+        return;
+      }
+
       // 1. Request session token / credentials from Cloudflare Edge
       const tokenRes = await fetch(`${API}/api/voice/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider: selectedProvider,
+          provider: providerToUse,
           customApiKey: customKey.trim(),
         }),
       });
@@ -102,9 +416,8 @@ export default function VoiceFlightDeckModal({
 
       // If provider requires custom key and none is provided, prompt user directly
       if (tokenData.requireCustomKey) {
-        setShowSettings(true);
         setConnecting(false);
-        setErrorMsg(`${currentMeta.label} requires an API key. Please enter your key in Settings below or click 'Get Key'.`);
+        setErrorMsg(`${currentMeta.label} requires an API key. You can switch to Free Browser Voice or enter your key in Settings.`);
         return;
       }
 
@@ -381,6 +694,17 @@ export default function VoiceFlightDeckModal({
   function disconnectSession() {
     stopAiPlayback();
 
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+    }
+    isWebSpeechSpeakingRef.current = false;
+
     if (processorRef.current) {
       try { processorRef.current.disconnect(); } catch {}
       processorRef.current = null;
@@ -497,18 +821,34 @@ export default function VoiceFlightDeckModal({
         {/* Center Stage: Quantum Fluid Orb & Waves Visualizer */}
         <div className="relative flex-1 flex flex-col items-center justify-center p-6 overflow-hidden">
           {errorMsg && (
-            <div className="absolute top-4 z-10 mx-auto flex items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200 max-w-xl shadow-xl backdrop-blur-md">
+            <div className="absolute top-4 z-10 mx-auto flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200 max-w-xl shadow-xl backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0 text-amber-400" />
                 <span>{errorMsg}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowSettings(true)}
-                className="shrink-0 rounded-lg bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/30 transition border border-amber-500/30 cursor-pointer"
-              >
-                Open Settings
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {selectedProvider !== "web_speech" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProvider("web_speech");
+                      setErrorMsg(null);
+                      setShowSettings(false);
+                      void connectSession("web_speech");
+                    }}
+                    className="rounded-lg bg-emerald-500/25 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/35 transition border border-emerald-500/35 cursor-pointer"
+                  >
+                    Switch to Free Voice
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(true)}
+                  className="rounded-lg bg-amber-500/20 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/30 transition border border-amber-500/30 cursor-pointer"
+                >
+                  Open Settings
+                </button>
+              </div>
             </div>
           )}
 
@@ -535,7 +875,7 @@ export default function VoiceFlightDeckModal({
 
           {!connected && !connecting && (
             <button
-              onClick={connectSession}
+              onClick={() => void connectSession()}
               className="mt-4 flex items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 hover:scale-105 transition active:scale-95 cursor-pointer"
             >
               <Mic size={18} />
@@ -562,7 +902,7 @@ export default function VoiceFlightDeckModal({
           {aiTranscript && (
             <div className="flex items-start gap-2">
               <span className="font-semibold text-purple-400 shrink-0">Agent-Pilot ({currentMeta.label}):</span>
-              <p className="text-zinc-300 leading-relaxed">{aiTranscript}</p>
+              <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap">{formatVoiceTranscript(aiTranscript)}</p>
             </div>
           )}
           {!userTranscript && !aiTranscript && connected && (
@@ -581,7 +921,19 @@ export default function VoiceFlightDeckModal({
             {connected && (
               <>
                 <button
-                  onClick={() => setMicMuted((prev) => !prev)}
+                  onClick={() => {
+                    setMicMuted((prev) => {
+                      const next = !prev;
+                      if (selectedProvider === "web_speech") {
+                        if (next) {
+                          try { recognitionRef.current?.stop(); } catch {}
+                        } else {
+                          try { recognitionRef.current?.start(); } catch {}
+                        }
+                      }
+                      return next;
+                    });
+                  }}
                   className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition cursor-pointer ${
                     micMuted
                       ? "bg-red-500/20 text-red-300 border border-red-500/30"

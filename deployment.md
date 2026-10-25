@@ -1,68 +1,81 @@
 # Production Deployment Guide — Agent-Pilot
 
-This guide provides end-to-end instructions for deploying Agent-Pilot with a **FastAPI + LangGraph** backend on **Render** and a **Next.js** frontend on **Vercel**.
+This guide provides end-to-end instructions for deploying Agent-Pilot across production environments, including the **active Cloudflare Workers + D1** edge deployment and the **FastAPI + LangGraph** backend on **Render** with **Next.js** on **Vercel**.
 
 ---
 
 ## 1. System Architecture & Live Endpoints
 
-| Component | Platform | URL / Endpoint | Tier |
+| Component | Platform | URL / Endpoint | Tier / Notes |
 |---|---|---|---|
-| **Backend API** | [Render](https://render.com) | `https://agent-pilot-api.onrender.com` | Free Web Service |
-| **Frontend UI** | [Vercel](https://vercel.com) | `https://agent-pilot-rust.vercel.app/` | Free Hobby |
-| **Storage Layer** | Cloud Storage | Multi-tenant persistent cloud store | Automated |
-| **Local Dev Backend** | Localhost | `http://localhost:8000` | Native |
-| **Local Dev Frontend** | Localhost | `http://localhost:3000` | Native |
+| **Production App (Full-Stack)** | [Cloudflare Workers](https://workers.cloudflare.com) | `https://agent-pilot.soapy-pint.workers.dev` | **Active** — Edge API + Static Frontend Assets |
+| **Edge Database** | [Cloudflare D1](https://developers.cloudflare.com/d1/) | `agent-pilot-db` (`4171929e-dd79-4d20-a973-6fbc74a5064f`) | Serverless Edge SQL |
+| **Python Backend API** | [Render](https://render.com) | `https://agent-pilot-api.onrender.com` | Free Web Service (LangGraph & Local RAG) |
+| **Alternative Frontend UI** | [Vercel](https://vercel.com) | `https://agent-pilot-rust.vercel.app/` | Free Hobby (Next.js Node runtime) |
+| **Local Dev Backend** | Localhost | `http://localhost:8000` | Native FastAPI |
+| **Local Dev Frontend** | Localhost | `http://localhost:3000` | Native Next.js |
 
 ---
 
-## 2. Environment Variables
+## 2. Active Primary Deployment: Cloudflare Workers + D1
 
-### Backend Configuration (Render Dashboard → Service → Environment)
+The live production application runs on **Cloudflare Workers** with zero cold starts, global replication, a Cloudflare D1 SQL database, and frontend static asset hosting.
+
+### 2.1 Configuration Files
+* **Worker Configuration**: [`cloudflare/wrangler.toml`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/wrangler.toml)
+* **Worker Router & Handlers**: [`cloudflare/src/index.ts`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/src/index.ts)
+* **Database Schema**: [`cloudflare/schema.sql`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/schema.sql)
+* **Static Asset Export**: `frontend/out`
+
+### 2.2 Environment Variables & Secrets (Cloudflare)
+
+Configured via `vars` in [`cloudflare/wrangler.toml`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/wrangler.toml) or Cloudflare Dashboard Secrets:
+
+| Variable | Description |
+|---|---|
+| `NVIDIA_API_KEY` | NVIDIA NIM API key for LLM inference |
+| `GOOGLE_CLIENT_ID` | Google OAuth Client ID for 1-click token verification |
+| `JWT_SECRET` | Secret key for signing and verifying user auth tokens |
+
+### 2.3 Deployment Steps
+
+```bash
+# 1. Build optimized static frontend export
+cd frontend
+npm install
+npm run build
+
+# 2. Deploy schema to remote Cloudflare D1 database (first time or schema changes)
+cd ../cloudflare
+npm install
+npx wrangler d1 execute agent-pilot-db --file=./schema.sql --remote
+
+# 3. Deploy Worker API and static assets
+npx wrangler deploy
+```
+
+---
+
+## 3. Alternative / Hybrid Deployment: Render (Python API) + Vercel
+
+If you require the full Python ecosystem (in-process FAISS dense embeddings, BM25 sparse indexer, LangGraph state machine, and Google Drive cloud syncing):
+
+### 3.1 Backend Configuration (Render Dashboard → Service → Environment)
 
 | Variable | Description | Example / Default | Required |
 |---|---|---|---|
 | `NVIDIA_API_KEY` | NVIDIA NIM API key for LLM generation | `nvapi-...` | ✅ Yes |
 | `HF_API_TOKEN` | Hugging Face token for embeddings | `hf_...` | ✅ Yes |
-| `FRONTEND_ORIGIN` | Allowed production frontend origin for CORS | `https://agent-pilot-rust.vercel.app` | ✅ Yes |
+| `FRONTEND_ORIGIN` | Allowed production frontend origin for CORS | `https://agent-pilot.soapy-pint.workers.dev` | ✅ Yes |
 | `MAX_FILE_SIZE_MB` | Maximum document upload size limit | `500` | Optional (default: `500`) |
-| `JWT_SECRET_KEY` | Secret key for signing user auth tokens | `generate-secure-random-token` | Recommended |
+| `JWT_SECRET_KEY` | Secret key for signing user auth tokens | `secure-random-token` | Recommended |
 | `STORAGE_BACKEND` | Storage provider (`google_drive`, `aws`, `local`) | `google_drive` | Optional |
 | `GOOGLE_DRIVE_FOLDER_ID` | Root folder ID for document persistence | Drive folder hash | When using Drive |
 | `GOOGLE_DRIVE_CLIENT_ID` | OAuth Client ID for cloud storage | `...apps.googleusercontent.com` | When using OAuth |
 | `GOOGLE_DRIVE_CLIENT_SECRET` | OAuth Client Secret | Client secret string | When using OAuth |
 | `GOOGLE_DRIVE_REFRESH_TOKEN` | Long-lived OAuth refresh token | Refresh token string | When using OAuth |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON (alternative to OAuth) | Base64 or JSON string | Alternative |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID for 1-click token verification | `...apps.googleusercontent.com` | Optional (Free) |
 
-### Frontend Configuration (Vercel Project Settings → Environment Variables)
-
-| Variable | Description | Value | Required |
-|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | Public endpoint of the backend API | `https://agent-pilot-api.onrender.com` | ✅ Yes |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google Web OAuth Client ID for 1-Click Sign-In | `...apps.googleusercontent.com` | Optional (Free) |
-
-> **Note for Local Development:** In `frontend/.env.local`, set:
-> ```env
-> NEXT_PUBLIC_API_URL=https://agent-pilot-api.onrender.com
-> NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-> ```
-
----
-
-## 2.1 Zero-Cost Authentication & Mandatory Auth Gate
-
-Agent-Pilot includes a **100% Zero-Cost Self-Hosted Authentication Architecture**:
-* **Native JWT + Bcrypt + SQLite**: Runs natively on the FastAPI backend without requiring any paid subscriptions (no Clerk, Auth0, or Supabase charges).
-* **Optional Google 1-Click Sign-In**: Free via Google Cloud Console OAuth 2.0 (Web client type).
-* **Mandatory Entry Gate**: Users who are not signed in cannot access the website, workspace, chat, or documents. They are presented with an interactive, secure Auth Gate modal to sign in or create an account.
-* **Persistent Sessions**: Access tokens and refresh tokens are stored in browser localStorage and automatically refreshed when expired. Logging out locks the gate immediately.
-
----
-
-## 3. Backend Deployment on Render
-
-### Method A — Automated via Blueprint (`render.yaml`)
+### 3.2 Automated Deployment via Blueprint (`render.yaml`)
 
 1. Push your repository to GitHub:
    ```bash
@@ -70,95 +83,44 @@ Agent-Pilot includes a **100% Zero-Cost Self-Hosted Authentication Architecture*
    git commit -m "feat: prepare production deployment"
    git push origin main
    ```
-2. Log in to [Render Dashboard](https://dashboard.render.com/).
-3. Click **New +** → **Blueprint**.
-4. Select your `Agent-Pilot` repository. Render detects [`render.yaml`](file:///d:/Main/Projects/Agent-Pilot/render.yaml) automatically.
-5. In the service settings, provide your secret keys:
-   - `NVIDIA_API_KEY`
-   - `HF_API_TOKEN`
-   - `FRONTEND_ORIGIN`: `https://agent-pilot-rust.vercel.app`
-6. Click **Apply**.
+2. Log in to [Render Dashboard](https://dashboard.render.com/) → **New +** → **Blueprint**.
+3. Select your `Agent-Pilot` repository. Render detects [`render.yaml`](file:///d:/Main/Projects/Agent-Pilot/render.yaml) automatically.
+4. Set required secret keys and click **Apply**.
+5. Live service URL: `https://agent-pilot-api.onrender.com`.
 
-### Method B — Manual Web Service Setup
+### 3.3 Frontend Deployment on Vercel
 
-1. In Render, select **New +** → **Web Service**.
-2. Connect your `Agent-Pilot` repository.
-3. Configure the runtime settings:
-   - **Name**: `agent-pilot-api`
-   - **Region**: Oregon (US West) or Frankfurt (EU Central)
-   - **Branch**: `main`
-   - **Root Directory**: `.` *(leave blank / project root)*
-   - **Runtime**: `Python 3`
-   - **Build Command**:
-     ```bash
-     pip install --upgrade pip && pip install -r requirements.txt
-     ```
-   - **Start Command**:
-     ```bash
-     python -m uvicorn api_server:app --host 0.0.0.0 --port $PORT
-     ```
-   - **Plan**: `Free`
-4. Add all environment variables listed in Section 2 under the **Environment** tab.
-5. Click **Create Web Service**.
-6. Note your service URL: `https://agent-pilot-api.onrender.com`.
+1. Log in to [Vercel Dashboard](https://vercel.com/dashboard) → **Add New…** → **Project**.
+2. Import repository `Agent-Pilot` and set Root Directory to `frontend`.
+3. Set environment variable:
+   - `NEXT_PUBLIC_API_URL`: `https://agent-pilot-api.onrender.com` (or your Cloudflare worker URL)
+4. Click **Deploy**. Live domain: `https://agent-pilot-rust.vercel.app`.
 
 ---
 
-## 4. Frontend Deployment on Vercel
+## 4. Connecting Services & CORS
 
-1. Log in to [Vercel Dashboard](https://vercel.com/dashboard).
-2. Click **Add New…** → **Project**.
-3. Import your GitHub repository: `Agent-Pilot`.
-4. Configure the project:
-   - **Framework Preset**: Next.js (automatically detected)
-   - **Root Directory**: Click *Edit* and select `frontend`
-   - **Build Command**: `next build` (default)
-   - **Output Directory**: `.next` (default)
-5. Expand **Environment Variables** and add:
-   - **Name**: `NEXT_PUBLIC_API_URL`
-   - **Value**: `https://agent-pilot-api.onrender.com`
-6. Click **Deploy**.
-7. Once deployed, verify your live domain (e.g., `https://agent-pilot-rust.vercel.app`).
+Agent-Pilot's Python backend (`api_server.py`) includes dynamic CORS origin matching allowing:
+* `https://agent-pilot.soapy-pint.workers.dev` (Active Cloudflare Worker domain)
+* `*.workers.dev` and `*.pages.dev` domains
+* `*.vercel.app` preview and production deployments
+* `http://localhost:3000` and `http://localhost:3001` for local development
 
 ---
 
-## 5. Connecting Frontend & Backend (CORS)
+## 5. Verification & Health Checks
 
-Agent-Pilot's backend includes dynamic CORS origin matching. To guarantee communication between your Vercel deployment and Render:
-
-1. In Render Dashboard, ensure `FRONTEND_ORIGIN` matches your exact Vercel URL:
-   ```text
-   https://agent-pilot-rust.vercel.app
+1. **Verify Cloudflare Worker Health**:
+   ```bash
+   curl -s https://agent-pilot.soapy-pint.workers.dev/health
+   # Expected: {"status":"ok","storage":{"backend":"d1","status":"connected"},"version":"1.2.0-cloudflare"}
    ```
-2. The backend also automatically allows:
-   - All `*.vercel.app` preview deployments via regex (`r"https://.*\.vercel\.app"`)
-   - `http://localhost:3000` and `http://127.0.0.1:3000` for seamless local testing.
 
----
-
-## 6. Verification & Health Checks
-
-Once both services are deployed:
-
-1. **Verify Backend Health**:
+2. **Verify Render Python API Health**:
    ```bash
    curl -s https://agent-pilot-api.onrender.com/health
-   # Expected response: {"status":"ok","storage":{"backend":"...","status":"connected"}}
+   # Expected: {"status":"ok","storage":{"backend":"...","status":"connected"}}
    ```
 
-2. **Verify Interactive API Documentation**:
+3. **Verify Interactive API Documentation**:
    Visit `https://agent-pilot-api.onrender.com/docs` to test Swagger UI endpoints.
-
-3. **Verify Frontend UI**:
-   - Open `https://agent-pilot-rust.vercel.app/`
-   - Open **Cloud Hub** (modal should load your documents catalog)
-   - Upload a test document (supports up to 500MB)
-   - Create a chat thread and query the uploaded document.
-
----
-
-## 7. Troubleshooting & Operational Notes
-
-* **Render Free Tier Spin-Down**: Free Render instances sleep after 15 minutes of inactivity. The first request after a sleep period takes ~25–40 seconds to start the container. Subsequent requests execute instantly.
-* **Large File Uploads (500MB)**: The backend supports files up to 500MB via `MAX_FILE_SIZE_MB`. For multi-hundred-megabyte files, ensure your network connection allows sufficient upload time.
-* **Isolated Multi-Tenancy**: Documents and threads are securely partitioned by user identity (`sub`). Guest users only view documents uploaded in their guest session; authenticated users have their own private catalog.

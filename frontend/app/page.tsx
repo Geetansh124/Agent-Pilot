@@ -38,10 +38,55 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [documentHubOpen, setDocumentHubOpen] = useState(false);
   const [voiceModalOpen, setVoiceModalOpen] = useState(false);
+  const [isDictating, setIsDictating] = useState(false);
 
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const dictationRecRef = useRef<any>(null);
+
+  function toggleDictation() {
+    if (typeof window === "undefined") return;
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      setVoiceModalOpen(true);
+      return;
+    }
+
+    if (isDictating) {
+      try { dictationRecRef.current?.stop(); } catch {}
+      setIsDictating(false);
+      return;
+    }
+
+    try {
+      const rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = "en-US";
+      dictationRecRef.current = rec;
+
+      rec.onstart = () => setIsDictating(true);
+      rec.onresult = (e: any) => {
+        let full = "";
+        for (let i = 0; i < e.results.length; i++) {
+          full += e.results[i][0].transcript;
+        }
+        if (full) {
+          setInput(full);
+        }
+      };
+      rec.onerror = (e: any) => {
+        console.warn("Dictation notice:", e.error);
+        setIsDictating(false);
+      };
+      rec.onend = () => setIsDictating(false);
+      rec.start();
+    } catch {
+      setIsDictating(false);
+      setVoiceModalOpen(true);
+    }
+  }
 
   useEffect(() => {
     newChat();
@@ -386,11 +431,15 @@ export default function Home() {
             <div className="flex items-end gap-2 p-2.5">
               <button
                 type="button"
-                onClick={() => setVoiceModalOpen(true)}
-                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06] transition cursor-pointer"
-                title="Launch Gemini Live Voice Flight Deck"
+                onClick={toggleDictation}
+                className={`p-2 rounded-xl transition cursor-pointer ${
+                  isDictating
+                    ? "bg-red-500/25 text-red-400 animate-pulse border border-red-500/40 ring-2 ring-red-500/30"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]"
+                }`}
+                title={isDictating ? "Stop voice dictation" : "Voice Dictate / Command (or click Live Voice in Header)"}
               >
-                <Mic size={15} className="text-indigo-400" />
+                <Mic size={15} className={isDictating ? "text-red-400 animate-bounce" : "text-indigo-400"} />
               </button>
 
               <button
@@ -435,7 +484,13 @@ export default function Home() {
                 }}
                 rows={1}
                 disabled={busy}
-                placeholder={uploading ? "Indexing & syncing document to Cloud Storage..." : "Ask anything, run code, scrape URLs, or query documents..."}
+                placeholder={
+                  isDictating
+                    ? "🎙️ Listening to your voice command... Speak now"
+                    : uploading
+                    ? "Indexing & syncing document to Cloud Storage..."
+                    : "Ask anything, run code, scrape URLs, or query documents..."
+                }
                 className="min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-500 outline-none max-h-32 leading-relaxed"
               />
 

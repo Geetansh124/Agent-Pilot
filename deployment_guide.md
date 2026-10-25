@@ -1,91 +1,76 @@
-# Deployment Guide — Agent-Pilot (100% Free)
+# Deployment Guide — Agent-Pilot
 
-| Component | Platform | Tier |
-|-----------|----------|------|
-| **Backend** (FastAPI + LangGraph) | [Render](https://render.com) | Free Web Service |
-| **Frontend** (Next.js) | [Vercel](https://vercel.com) | Free Hobby |
+| Component | Platform | URL / Details | Tier |
+|-----------|----------|---------------|------|
+| **Production App (Full-Stack)** | [Cloudflare Workers](https://workers.cloudflare.com) | `https://agent-pilot.soapy-pint.workers.dev` | Free Edge Tier |
+| **Edge Database** | [Cloudflare D1](https://developers.cloudflare.com/d1/) | `agent-pilot-db` (`4171929e-dd79-4d20-a973-6fbc74a5064f`) | Serverless SQL |
+| **Backend API (Python / LangGraph)** | [Render](https://render.com) | `https://agent-pilot-api.onrender.com` | Free Web Service (Optional) |
+| **Alternative Frontend UI** | [Vercel](https://vercel.com) | `https://agent-pilot-rust.vercel.app` | Free Hobby (Optional) |
 
 ---
 
-## Step 1 — Push Code to GitHub
+## Primary Deployment: Cloudflare Workers + D1 (Active)
 
-Make sure your latest code is pushed:
+Agent-Pilot is deployed as a zero-cold-start, globally distributed application on Cloudflare Workers with static Next.js assets and Cloudflare D1.
+
+### Step 1 — Build Frontend Static Export
 
 ```bash
-git add -A
-git commit -m "prep: deployment config"
-git push origin main
+cd frontend
+npm install
+npm run build
+```
+This generates the optimized production static export in `frontend/out` via Next.js (`output: "export"`).
+
+### Step 2 — Initialize / Migrate Cloudflare D1 Database
+
+From the `cloudflare` directory:
+
+```bash
+cd ../cloudflare
+npm install
+# Execute the schema against the remote Cloudflare D1 database
+npx wrangler d1 execute agent-pilot-db --file=./schema.sql --remote
 ```
 
----
+### Step 3 — Deploy Worker and Static Assets
 
-## Step 2 — Deploy Backend on Render (Free)
+```bash
+npx wrangler deploy
+```
 
-1. Go to [render.com](https://dashboard.render.com/) → **New** → **Blueprint**.
-2. Connect your GitHub repo: `Geetansh124/Agent-Pilot`.
-3. Render reads `render.yaml` automatically and creates the **docupilot-api** service.
-4. **Set secret environment variables** in the Render dashboard → Service → **Environment** tab:
+`wrangler.toml` automatically uploads:
+1. The TypeScript Hono API ([`cloudflare/src/index.ts`](file:///d:/Main/Projects/Agent-Pilot/cloudflare/src/index.ts))
+2. Static assets directly from `../frontend/out`
+3. Bindings for D1 database (`DB`) and environment secrets
 
-   | Key | Value | Required |
-   |-----|-------|----------|
-   | `NVIDIA_API_KEY` | Your NVIDIA API key | ✅ Yes |
-   | `HF_API_TOKEN` | Your HuggingFace token | ✅ Yes |
-   | `FRONTEND_ORIGIN` | *(set after Step 3)* | ✅ Yes |
-   | `ALPHAVANTAGE_API_KEY` | Your AlphaVantage key | Optional |
-
-5. Click **Save Changes** — Render will build and deploy.
-6. Note your backend URL: `https://docupilot-api.onrender.com`
-
-> **Note:** Render free tier spins down after 15 min of inactivity. First request after sleep takes ~30–60s.
+### Live Deployment URL:
+- **`https://agent-pilot.soapy-pint.workers.dev`**
 
 ---
 
-## Step 3 — Deploy Frontend on Vercel (Free)
+## Alternative / Legacy Deployment: Render + Vercel
 
-1. Go to [vercel.com](https://vercel.com/dashboard) → **Add New** → **Project**.
-2. Import your GitHub repo: `Geetansh124/Agent-Pilot`.
-3. Configure:
-   - **Framework Preset**: Next.js
-   - **Root Directory**: `frontend`
-4. **Environment Variables** → add:
+If running the Python LangGraph backend ([`api_server.py`](file:///d:/Main/Projects/Agent-Pilot/api_server.py)) alongside a Vercel-hosted frontend:
 
-   | Key | Value |
-   |-----|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://docupilot-api.onrender.com` |
+### Deploy Backend on Render
+1. Connect GitHub repo: `Geetansh124/Agent-Pilot`.
+2. Render reads [`render.yaml`](file:///d:/Main/Projects/Agent-Pilot/render.yaml) automatically and provisions `agent-pilot-api`.
+3. Set environment variables (`NVIDIA_API_KEY`, `HF_API_TOKEN`, `FRONTEND_ORIGIN`).
+4. Backend URL: `https://agent-pilot-api.onrender.com`
 
-5. Click **Deploy**.
-6. Note your frontend URL: `https://your-project.vercel.app`
-
----
-
-## Step 4 — Connect Frontend ↔ Backend (CORS)
-
-1. Go back to **Render** → your `docupilot-api` service → **Environment**.
-2. Set `FRONTEND_ORIGIN` to your Vercel URL:
-   ```
-   https://your-project.vercel.app
-   ```
-3. Save → Render auto-redeploys with the updated CORS origin.
+### Deploy Frontend on Vercel
+1. Import repository in Vercel.
+2. Root directory: `frontend`.
+3. Set `NEXT_PUBLIC_API_URL`: `https://agent-pilot-api.onrender.com`.
+4. Deploy to `https://agent-pilot-rust.vercel.app`.
 
 ---
 
-## Step 5 — Verify
+## Verification & Health Check
 
-1. Open your Vercel frontend URL in a browser.
-2. Create a new chat thread and send a message.
-3. Upload a PDF and ask questions about it.
-
-If the backend returns errors, check Render logs: **Dashboard → docupilot-api → Logs**.
-
----
-
-## Optional: AWS Storage (S3 + DynamoDB)
-
-If you want cloud document persistence, add these secrets in Render:
-
-| Key | Value |
-|-----|-------|
-| `AWS_ACCESS_KEY_ID` | Your AWS access key |
-| `AWS_SECRET_ACCESS_KEY` | Your AWS secret key |
-
-The bucket (`docupilot-327514289233-us-east-1`) and table (`docupilot-documents`) are already configured in `render.yaml`.
+Verify the Cloudflare deployment:
+```bash
+curl -s https://agent-pilot.soapy-pint.workers.dev/health
+# Response: {"status":"ok","storage":{"backend":"d1","status":"connected"},"version":"1.2.0-cloudflare"}
+```
