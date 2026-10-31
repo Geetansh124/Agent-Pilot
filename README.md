@@ -5,7 +5,7 @@
   <p><strong>A document-grounded AI workspace with a graph-based agent workflow.</strong></p>
   <p><a href="https://github.com/Geetansh124/Agent-Pilot">Repository</a> · <a href="https://github.com/Geetansh124/Agent-Pilot/tree/main/docs">Documentation</a></p>
   <p>
-    <a href="https://opensource.org/licenses/MIT"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-7dd3fc?style=for-the-badge&labelColor=0b1220"></a>
+    <a href="https://github.com/Geetansh124/Agent-Pilot/stargazers"><img alt="GitHub stars" src="https://shieldcn.dev/github/stars/Geetansh124/Agent-Pilot.svg?variant=outline"></a>
     <a href="https://www.python.org/"><img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-38bdf8?style=for-the-badge&labelColor=0b1220"></a>
     <a href="https://nextjs.org/"><img alt="Next.js" src="https://img.shields.io/badge/frontend-Next.js-22d3ee?style=for-the-badge&labelColor=0b1220"></a>
     <a href="https://github.com/langchain-ai/langgraph"><img alt="LangGraph" src="https://img.shields.io/badge/workflow-LangGraph-a78bfa?style=for-the-badge&labelColor=0b1220"></a>
@@ -117,10 +117,10 @@ The API is available at <code>http://127.0.0.1:8000</code>; interactive API docu
 In a second terminal, from the repository root:
 
     cd frontend
-    npm install
+    npm ci
     npm run dev
 
-Open <code>https://agent-pilot.soapy-pint.workers.dev</code>. If the frontend cannot reach the API, check the configured API base URL and backend CORS origin list.
+Open the local frontend at <code>http://localhost:3000</code>. If the frontend cannot reach the API, check the configured API base URL and backend CORS origin list.
 
 ## Configuration
 
