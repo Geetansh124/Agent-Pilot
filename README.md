@@ -12,7 +12,7 @@
   </p>
 </div>
 
-> **Status:** research and development. Run locally with your own provider credentials. No hosted demo is linked while the public deployment is unavailable.
+> **Status:** research and development. Run locally with your own provider credentials. The Cloudflare-hosted sign-in page and health route respond, but the full workflow has not been verified end to end; no demo link is published yet.
 
 ## What it does
 
@@ -159,7 +159,9 @@ These commands are guidance; this README does not claim that they have run succe
 ## Status and limitations
 
 - **Local setup:** Model-backed features require valid provider credentials and installed dependencies.
-- **Hosted backend:** The frontend needs a reachable API endpoint with compatible CORS configuration. The public endpoint previously documented for this project did not return the documented health route during review, so no live demo link is published here.
+- **Cloudflare frontend:** The sign-in page at `https://agent-pilot.soapy-pint.workers.dev/` responds. Its `/health` route returned `status: ok` with D1 connected. Login, upload, RAG, streaming, and tool execution have not been verified end to end.
+- **Render API:** The documented `/health` and `/openapi.json` routes currently return `Not Found`.
+- **Vercel:** The previously documented `agent-pilot-rust.vercel.app` URL returns `404 DEPLOYMENT_NOT_FOUND`. No Demo link is published until the core workflow is verified.
 - **External tools:** Search, market data, cloud storage, and other third-party integrations can require separate keys, accounts, quotas, or network access.
 - **Production readiness:** Authentication, isolation, rate limits, and storage behavior should be independently reviewed and tested in the deployment environment before handling real users or sensitive documents.
 - **Evaluation:** No test-pass count, benchmark result, uptime, or performance figure is asserted here.
