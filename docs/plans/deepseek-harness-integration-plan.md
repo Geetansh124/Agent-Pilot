@@ -155,3 +155,4 @@ When `assistant/message` commits:
 - Immediate rollback: set `AGENT_BACKEND=langgraph` and restart container.
 - No database downgrades required due to non-destructive additive DDL.
 - In-flight LangGraph checkpoints remain untouched.
+

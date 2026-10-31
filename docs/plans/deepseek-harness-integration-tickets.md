@@ -67,3 +67,4 @@
 - **HP-083**: Phased rollout strategy documentation (5% -> 25% -> 50% -> 100%).
 - **HP-084**: Operational runbooks for service restart, storage rebuild, and key rotation.
 - **HP-085**: Final end-to-end verification and pull-request readiness packaging.
+

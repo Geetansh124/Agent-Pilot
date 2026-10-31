@@ -30,3 +30,4 @@ We will integrate DeepSeek Harness into Agent-Pilot behind an environment-driven
 - Additional runtime supervisor complexity (process lifecycle, eviction, health checks).
 - Requires local node runtime or wheel-embedded binary for `dsh`.
 - Additional database tables and event sync logic.
+

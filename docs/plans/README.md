@@ -21,3 +21,4 @@ The integration provides:
 ## 3. Scope & Recommendation
 
 Integration proceeds in 9 defined phases (Phase 0 through Phase 8), beginning with a self-contained feasibility gate and progressing through supervisor tenancy, SSE chat bridge, MCP bridge, approvals, persistence sync, live streaming, observability/quotas, and hardening.
+

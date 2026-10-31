@@ -71,3 +71,13 @@ Evidence: Verified one-shot authorization decisions, duplicate rejection (409), 
 Deviations: none
 Risks / follow-ups: build idempotent event projections in Phase 5
 Next: Phase 5 — Persistence, sync, lifecycle (HP-050 … HP-055)
+
+### PHASE 5 — Persistence, sync, lifecycle
+Status: complete
+Tickets: HP-050 … HP-055
+Changed: src/harness/store.py, src/harness/sync.py, scripts/harness_reconcile.py, tests/test_harness_persistence.py
+Tests: python -m unittest tests/test_harness_persistence.py (3 passed); python -m unittest (149 passed, 0 failed)
+Evidence: Verified append-only harness_events with UNIQUE(thread_id, seq), atomic message projection, remote storage sync/restore with SHA-256 verification, thread cleanup (workspace + runtime eviction + DB records), and offline reconciliation replay
+Deviations: none
+Risks / follow-ups: Live streaming and shadow evaluation comparator in Phase 6
+Next: Phase 6 — Live streaming & shadow evaluation (HP-060 … HP-064)
