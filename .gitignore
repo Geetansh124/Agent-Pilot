@@ -34,3 +34,4 @@ credentials.json
 token.json
 google_drive_token.json
 client_secret.json
+artifacts/
