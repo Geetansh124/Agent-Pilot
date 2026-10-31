@@ -13,8 +13,8 @@
 | **Phase 1** | Supervisor & Tenancy | HP-010 … HP-015 | COMPLETE | `test_harness_supervisor.py` green, 2-tenant isolation |
 | **Phase 2** | Chat Backend & SSE Stream | HP-020 … HP-025 | COMPLETE | `test_harness_chat.py` green, SSE parity verified |
 | **Phase 3** | Authenticated MCP Bridge | HP-030 … HP-034 | COMPLETE | `test_harness_mcp.py` green, bearer auth, RAG parity |
-| **Phase 4** | Approvals & HITL Gate | HP-040 … HP-044 | IN PROGRESS | `test_harness_approvals.py` green, fail-closed verified |
-| **Phase 5** | Persistence & State Sync | HP-050 … HP-055 | PENDING | `test_harness_persistence.py` green, crash recovery |
+| **Phase 4** | Approvals & HITL Gate | HP-040 … HP-044 | COMPLETE | `test_harness_approvals.py` green, fail-closed verified |
+| **Phase 5** | Persistence & State Sync | HP-050 … HP-055 | IN PROGRESS | `test_harness_persistence.py` green, crash recovery |
 | **Phase 6** | Live Streaming & Shadow Eval | HP-060 … HP-064 | PENDING | Token order test, shadow comparison run |
 | **Phase 7** | Observability & Quota Control | HP-070 … HP-074 | PENDING | Structured audit, 429 quota enforcement |
 | **Phase 8** | Hardening & Rollout Runbook | HP-080 … HP-085 | PENDING | Chaos matrix green, p95 measured, runbooks complete |
@@ -61,3 +61,13 @@ Evidence: Verified constant-time bearer authentication on loopback MCP endpoint,
 Deviations: none
 Risks / follow-ups: wire approval bridge to HITL manager in Phase 4
 Next: Phase 4 — Approvals and questions (HP-040 … HP-044)
+
+### PHASE 4 — Approvals and questions
+Status: complete
+Tickets: HP-040 … HP-044
+Changed: src/harness/approvals.py, src/harness/approval_routes.py, api_server.py, frontend/app/components/ApprovalModal.tsx, tests/test_harness_approvals.py
+Tests: python -m unittest tests/test_harness_approvals.py (5 passed); python -m unittest (146 passed, 0 failed)
+Evidence: Verified one-shot authorization decisions, duplicate rejection (409), strict thread ownership checks (404), fail-closed rejection on expired requests, interactive question workflows, and ApprovalModal component
+Deviations: none
+Risks / follow-ups: build idempotent event projections in Phase 5
+Next: Phase 5 — Persistence, sync, lifecycle (HP-050 … HP-055)

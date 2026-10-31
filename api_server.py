@@ -39,6 +39,7 @@ from src.agent.routes import services_router
 from src.security import sanitize_output, validate_input_prompt
 from src.agent import hitl_manager
 from src.observability import audit_logger, cost_tracker, estimate_token_count
+from src.harness.approval_routes import approval_router
 
 logger = logging.getLogger("api_server")
 
@@ -55,6 +56,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(documents_router, prefix="/api", tags=["documents"])
 app.include_router(services_router, prefix="/api", tags=["services"])
+app.include_router(approval_router)
 
 # ---------------------------------------------------------------------------
 # Rate Limiting
@@ -62,7 +64,6 @@ app.include_router(services_router, prefix="/api", tags=["services"])
 _RATE_LIMITS: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT_WINDOW = 60.0
 _RATE_LIMIT_MAX_REQUESTS = 60
-
 
 def _check_rate_limit(client_ip: str) -> None:
     now = time.time()
@@ -75,7 +76,6 @@ def _check_rate_limit(client_ip: str) -> None:
         )
     recent.append(now)
     _RATE_LIMITS[client_ip] = recent
-
 
 # ---------------------------------------------------------------------------
 # Models
