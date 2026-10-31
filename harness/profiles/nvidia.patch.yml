@@ -1,0 +1,19 @@
+# DeepSeek Harness profile patch for NVIDIA NIM OpenAI-compatible route
+profile: sdk
+version: "0.2.2-alpha.2"
+
+providers:
+  nvidia:
+    plugin: "@deepseek-ai/dsh-llm-pi-ai"
+    api: openai-completions
+    baseURL: "https://integrate.api.nvidia.com/v1"
+    apiKeyEnv: "NVIDIA_API_KEY"
+    defaultModel: "nvidia/nemotron-3-ultra-550b-a55b"
+    models:
+      "nvidia/nemotron-3-ultra-550b-a55b":
+        contextWindow: 131072
+        maxOutputTokens: 8192
+        streaming: true
+        toolCalling: true
+        temperature: 0.2
+

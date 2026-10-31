@@ -1,0 +1,63 @@
+{
+  "events": [
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "busy",
+        "timestamp": 1730400020.000
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "tool/call",
+        "data": {
+          "callId": "call-err-01",
+          "name": "read_workspace_file",
+          "arguments": {
+            "filename": "../outside.txt"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "tool/error",
+        "data": {
+          "callId": "call-err-01",
+          "name": "read_workspace_file",
+          "error": {
+            "code": "SANDBOX_ACCESS_DENIED",
+            "message": "Access denied: target path escapes tenant workspace sandbox."
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "assistant/message",
+        "data": {
+          "id": "msg-003",
+          "role": "assistant",
+          "stream": ["I ", "cannot access ", "files outside ", "the designated ", "workspace."],
+          "content": "I cannot access files outside the designated workspace."
+        }
+      }
+    },
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "idle",
+        "timestamp": 1730400022.100
+      }
+    }
+  ]
+}
+

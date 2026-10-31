@@ -1,0 +1,21 @@
+{
+  "events": [
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "approval/request",
+        "data": {
+          "requestId": "appr-req-001",
+          "toolName": "delete_workspace_file",
+          "arguments": {
+            "filename": "old_output.csv"
+          },
+          "reason": "Tool operation modifies filesystem; confirmation required.",
+          "timeoutSeconds": 300
+        }
+      }
+    }
+  ]
+}
+

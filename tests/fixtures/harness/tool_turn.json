@@ -1,0 +1,64 @@
+{
+  "events": [
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "busy",
+        "timestamp": 1730400010.000
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "tool/call",
+        "data": {
+          "callId": "call-rag-01",
+          "name": "rag_tool",
+          "arguments": {
+            "query": "What is the project architecture?",
+            "thread_id": "thread-101"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "tool/result",
+        "data": {
+          "callId": "call-rag-01",
+          "name": "rag_tool",
+          "result": {
+            "context": "Agent-Pilot uses FastAPI with LangGraph and Harness backends.",
+            "citations": [{"doc_id": "doc-01", "score": 0.95, "source": "architecture.md"}]
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "assistant/message",
+        "data": {
+          "id": "msg-002",
+          "role": "assistant",
+          "stream": ["Based ", "on ", "the architecture ", "document, ", "Agent-Pilot ", "uses FastAPI."],
+          "content": "Based on the architecture document, Agent-Pilot uses FastAPI."
+        }
+      }
+    },
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "idle",
+        "timestamp": 1730400012.500
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "question/request",
+        "data": {
+          "questionId": "q-req-001",
+          "prompt": "Which data format would you prefer for the export?",
+          "options": ["CSV", "JSON", "Markdown Table"],
+          "allowCustom": true
+        }
+      }
+    }
+  ]
+}
+

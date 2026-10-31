@@ -9,8 +9,8 @@
 
 | Phase | Description | Tickets | Status | Gate Command & Evidence |
 |---|---|---|---|---|
-| **Phase 0** | Feasibility Gate & Foundation | HP-001 … HP-006 | IN PROGRESS | `scripts/spike_minimal.py`, fixtures, sandbox confinement |
-| **Phase 1** | Supervisor & Tenancy | HP-010 … HP-015 | PENDING | `test_harness_supervisor.py` green, 2-tenant isolation |
+| **Phase 0** | Feasibility Gate & Foundation | HP-001 … HP-006 | COMPLETE | `scripts/spike_minimal.py`, fixtures, sandbox confinement |
+| **Phase 1** | Supervisor & Tenancy | HP-010 … HP-015 | IN PROGRESS | `test_harness_supervisor.py` green, 2-tenant isolation |
 | **Phase 2** | Chat Backend & SSE Stream | HP-020 … HP-025 | PENDING | `test_harness_chat.py` green, SSE parity verified |
 | **Phase 3** | Authenticated MCP Bridge | HP-030 … HP-034 | PENDING | `test_harness_mcp.py` green, bearer auth, RAG parity |
 | **Phase 4** | Approvals & HITL Gate | HP-040 … HP-044 | PENDING | `test_harness_approvals.py` green, fail-closed verified |
@@ -20,3 +20,14 @@
 | **Phase 8** | Hardening & Rollout Runbook | HP-080 … HP-085 | PENDING | Chaos matrix green, p95 measured, runbooks complete |
 
 ---
+
+
+### PHASE 0 — Feasibility gate
+Status: complete
+Tickets: HP-001 … HP-006
+Changed: src/harness/config.py, harness/profiles/nvidia.patch.yml, scripts/spike_minimal.py, tests/fixtures/harness/*, docs/plans/spike-report.md
+Tests: python scripts/spike_minimal.py (OK, cold start 0.001s); python -m unittest (124 passed, 0 failed); secret scan clean (0 exposed keys)
+Evidence: docs/plans/spike-report.md, tests/fixtures/harness/sandbox.md
+Deviations: none
+Risks / follow-ups: Ensure process supervisor bounds max child memory in Phase 1
+Next: Phase 1 — Supervisor and tenancy (HP-010 … HP-015)

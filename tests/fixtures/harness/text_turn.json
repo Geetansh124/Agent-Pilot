@@ -1,0 +1,45 @@
+{
+  "events": [
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "busy",
+        "timestamp": 1730400000.100
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "assistant/message",
+        "data": {
+          "id": "msg-001",
+          "role": "assistant",
+          "stream": [
+            "Hello",
+            "! ",
+            "I ",
+            "am ",
+            "Agent",
+            "-Pilot ",
+            "powered ",
+            "by ",
+            "DeepSeek ",
+            "Harness."
+          ],
+          "content": "Hello! I am Agent-Pilot powered by DeepSeek Harness."
+        }
+      }
+    },
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "idle",
+        "timestamp": 1730400001.250
+      }
+    }
+  ]
+}
+

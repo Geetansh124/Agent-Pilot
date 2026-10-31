@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "context/compaction",
+        "data": {
+          "previousTokenCount": 98500,
+          "newTokenCount": 24200,
+          "strategy": "summary-sliding-window",
+          "prunedTurns": 14
+        }
+      }
+    }
+  ]
+}
+
