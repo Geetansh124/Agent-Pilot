@@ -43,11 +43,7 @@ from src.observability import audit_logger, cost_tracker, estimate_token_count
 logger = logging.getLogger("api_server")
 
 app = FastAPI(title="Agent-Pilot API", version="1.1.0")
-origins = list(dict.fromkeys([
-    "http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001",
-    "https://agent-pilot.soapy-pint.workers.dev",
-    *[o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
-]))
+origins = list(dict.fromkeys(["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001", "https://agent-pilot.soapy-pint.workers.dev", *[o.strip() for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]]))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -467,22 +463,27 @@ def download_file_by_category(thread_id: str, category: str, filename: str) -> R
         headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
     )
 
-
 @app.get("/api/files/{thread_id}/{filename:path}")
 def download_workspace_file(thread_id: str, filename: str) -> Response:
     """Download a persistent workspace file by filename."""
     return download_file_by_category(thread_id=thread_id, category="workspace", filename=filename)
 
-
 @app.post("/mcp")
 async def mcp_endpoint(request: Request) -> dict[str, Any]:
-    """Handle standard Model Context Protocol (MCP) JSON-RPC 2.0 requests."""
+    """Handle standard Model Context Protocol (MCP) JSON-RPC 2.0 requests with internal bearer auth."""
+    from src.mcp.mcp_server import mcp_server, verify_bearer_token
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload.")
-    from src.mcp import mcp_server
-    return mcp_server.handle_request(body)
+    auth_header = request.headers.get("Authorization")
+    method = body.get("method") if isinstance(body, dict) else None
+    if method not in ("initialize", "ping"):
+        if not verify_bearer_token(auth_header):
+            raise HTTPException(status_code=401, detail="Unauthorized internal MCP request.")
+    tenant_id = request.headers.get("X-Tenant-ID")
+    thread_id = request.headers.get("X-Thread-ID")
+    return mcp_server.handle_request(body, tenant_id=tenant_id, thread_id=thread_id)
 
 
 # ---------------------------------------------------------------------------

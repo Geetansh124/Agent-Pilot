@@ -1,0 +1,22 @@
+# DeepSeek Harness profile patch for Agent-Pilot internal MCP client
+profile: sdk
+version: "0.2.2-alpha.2"
+
+mcpClients:
+  mcp-ap:
+    transport: streamable-http
+    endpoint: "http://127.0.0.1:8000/mcp"
+    headers:
+      Authorization: "Bearer ${MCP_INTERNAL_TOKEN}"
+    tools:
+      - rag_tool
+      - web_search
+      - scrape_web
+      - read_workspace_file
+      - write_workspace_file
+      - delete_workspace_file
+      - query_database
+      - retrieve_memory
+      - get_current_datetime
+    timeout: 30000
+

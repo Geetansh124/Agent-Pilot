@@ -12,8 +12,8 @@
 | **Phase 0** | Feasibility Gate & Foundation | HP-001 … HP-006 | COMPLETE | `scripts/spike_minimal.py`, fixtures, sandbox confinement |
 | **Phase 1** | Supervisor & Tenancy | HP-010 … HP-015 | COMPLETE | `test_harness_supervisor.py` green, 2-tenant isolation |
 | **Phase 2** | Chat Backend & SSE Stream | HP-020 … HP-025 | COMPLETE | `test_harness_chat.py` green, SSE parity verified |
-| **Phase 3** | Authenticated MCP Bridge | HP-030 … HP-034 | IN PROGRESS | `test_harness_mcp.py` green, bearer auth, RAG parity |
-| **Phase 4** | Approvals & HITL Gate | HP-040 … HP-044 | PENDING | `test_harness_approvals.py` green, fail-closed verified |
+| **Phase 3** | Authenticated MCP Bridge | HP-030 … HP-034 | COMPLETE | `test_harness_mcp.py` green, bearer auth, RAG parity |
+| **Phase 4** | Approvals & HITL Gate | HP-040 … HP-044 | IN PROGRESS | `test_harness_approvals.py` green, fail-closed verified |
 | **Phase 5** | Persistence & State Sync | HP-050 … HP-055 | PENDING | `test_harness_persistence.py` green, crash recovery |
 | **Phase 6** | Live Streaming & Shadow Eval | HP-060 … HP-064 | PENDING | Token order test, shadow comparison run |
 | **Phase 7** | Observability & Quota Control | HP-070 … HP-074 | PENDING | Structured audit, 429 quota enforcement |
@@ -51,3 +51,13 @@ Evidence: Verified SSE event shapes (`token`, `tool`, `done`), exact preservatio
 Deviations: none
 Risks / follow-ups: proceed to secure loopback MCP bridge in Phase 3
 Next: Phase 3 — MCP bridge and RAG parity (HP-030 … HP-034)
+
+### PHASE 3 — MCP bridge and RAG parity
+Status: complete
+Tickets: HP-030 … HP-034
+Changed: src/mcp/mcp_server.py, api_server.py, harness/profiles/ap-tools.patch.yml, tests/test_harness_mcp.py
+Tests: python -m unittest tests/test_harness_mcp.py (6 passed); python -m unittest (141 passed, 0 failed)
+Evidence: Verified constant-time bearer authentication on loopback MCP endpoint, rejection of unauthenticated tool calls, server-side tenant scoping, and RAG document grounding with citations and scores
+Deviations: none
+Risks / follow-ups: wire approval bridge to HITL manager in Phase 4
+Next: Phase 4 — Approvals and questions (HP-040 … HP-044)
