@@ -5,38 +5,36 @@ import { ExternalLink, Key, Eye, EyeOff, Sparkles, Check, CheckCircle2 } from "l
 import { VoiceProviderId, VOICE_PROVIDERS } from "./voiceProviders";
 
 interface VoiceSettingsDrawerProps {
-  selectedProvider: VoiceProviderId;
-  onProviderChange: (id: VoiceProviderId) => void;
-  customKey: string;
-  onCustomKeyChange: (key: string) => void;
-  selectedVoice: string;
-  onVoiceChange: (voice: string) => void;
-  thinkingLevel: string;
-  onThinkingLevelChange: (level: string) => void;
-  onSave: () => void;
+  initialProvider: VoiceProviderId;
+  initialKey: string;
+  initialVoice: string;
+  initialThinkingLevel: string;
+  onSave: (provider: VoiceProviderId, key: string, voice: string, thinkingLevel: string) => void;
 }
 
 export default function VoiceSettingsDrawer({
-  selectedProvider,
-  onProviderChange,
-  customKey,
-  onCustomKeyChange,
-  selectedVoice,
-  onVoiceChange,
-  thinkingLevel,
-  onThinkingLevelChange,
+  initialProvider,
+  initialKey,
+  initialVoice,
+  initialThinkingLevel,
   onSave,
 }: VoiceSettingsDrawerProps) {
+  const [selectedProvider, setSelectedProvider] = useState<VoiceProviderId>(initialProvider);
+  const [customKey, setCustomKey] = useState<string>(initialKey);
+  const [selectedVoice, setSelectedVoice] = useState<string>(initialVoice);
+  const [thinkingLevel, setThinkingLevel] = useState<string>(initialThinkingLevel);
   const [showKey, setShowKey] = useState(false);
+
   const currentMeta = VOICE_PROVIDERS[selectedProvider];
 
   const handleProviderSelect = (id: VoiceProviderId) => {
-    onProviderChange(id);
+    setSelectedProvider(id);
     if (typeof window !== "undefined") {
       const savedKey = localStorage.getItem(VOICE_PROVIDERS[id].keyStorageKey) || "";
-      onCustomKeyChange(savedKey);
-      const defaultVoice = VOICE_PROVIDERS[id].voices[0]?.id || "";
-      onVoiceChange(defaultVoice);
+      setCustomKey(savedKey);
+      const savedVoice = localStorage.getItem(`AGENT_PILOT_${id.toUpperCase()}_VOICE`) ||
+        VOICE_PROVIDERS[id].voices[0]?.id || "";
+      setSelectedVoice(savedVoice);
     }
   };
 
@@ -103,7 +101,7 @@ export default function VoiceSettingsDrawer({
                 <input
                   type={showKey ? "text" : "password"}
                   value={customKey}
-                  onChange={(e) => onCustomKeyChange(e.target.value)}
+                  onChange={(e) => setCustomKey(e.target.value)}
                   placeholder={currentMeta.keyPlaceholder}
                   className="w-full rounded-xl border border-white/10 bg-black/40 pl-3 pr-10 py-2 text-zinc-100 placeholder:text-zinc-600 outline-none focus:border-indigo-500 text-xs font-mono"
                 />
@@ -128,7 +126,7 @@ export default function VoiceSettingsDrawer({
             <label className="block font-medium text-zinc-300 mb-1">Voice / Persona</label>
             <select
               value={selectedVoice}
-              onChange={(e) => onVoiceChange(e.target.value)}
+              onChange={(e) => setSelectedVoice(e.target.value)}
               className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-zinc-100 outline-none focus:border-indigo-500 text-xs"
             >
               {currentMeta.voices.map((v) => (
@@ -146,7 +144,7 @@ export default function VoiceSettingsDrawer({
             {currentMeta.supportsThinking ? (
               <select
                 value={thinkingLevel}
-                onChange={(e) => onThinkingLevelChange(e.target.value)}
+                onChange={(e) => setThinkingLevel(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-zinc-100 outline-none focus:border-indigo-500 text-xs"
               >
                 <option value="minimal" className="bg-zinc-900 text-zinc-100">Minimal (Lowest latency)</option>
@@ -170,7 +168,7 @@ export default function VoiceSettingsDrawer({
         </span>
         <button
           type="button"
-          onClick={onSave}
+          onClick={() => onSave(selectedProvider, customKey, selectedVoice, thinkingLevel)}
           className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-1.5 font-medium text-white hover:bg-indigo-500 transition shadow-sm cursor-pointer"
         >
           <CheckCircle2 size={13} />

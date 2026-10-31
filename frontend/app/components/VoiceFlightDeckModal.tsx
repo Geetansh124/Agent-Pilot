@@ -81,12 +81,58 @@ export default function VoiceFlightDeckModal({
   const aiLevelRef = useRef<number>(0);
   const pingStartRef = useRef<number>(0);
 
-  // Web Speech API refs
+  // Web Speech API & Streaming refs
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<any>(null);
   const isWebSpeechSpeakingRef = useRef<boolean>(false);
+  const streamAbortControllerRef = useRef<AbortController | null>(null);
+  const currentAiSentenceRef = useRef<string>("");
+  const currentQueryRef = useRef<string>("");
 
   const currentMeta = VOICE_PROVIDERS[selectedProvider];
+
+  // Instant barge-in interruption & reset to listening state
+  function interruptAndListen(reason = "barge_in") {
+    // 1. Abort any active streaming HTTP request immediately
+    if (streamAbortControllerRef.current) {
+      try { streamAbortControllerRef.current.abort(); } catch {}
+      streamAbortControllerRef.current = null;
+    }
+
+    // 2. Cancel browser speech synthesis immediately
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try { window.speechSynthesis.cancel(); } catch {}
+    }
+
+    // 3. Stop all scheduled Web Audio sources immediately
+    activeSourcesRef.current.forEach((s) => {
+      try { s.stop(); } catch {}
+    });
+    activeSourcesRef.current = [];
+    if (audioOutputContextRef.current) {
+      nextPlayTimeRef.current = audioOutputContextRef.current.currentTime;
+    }
+
+    // 4. Send interrupt message to WebSocket if connected so upstream stops streaming (only when client-initiated)
+    if (reason !== "server_interrupted" && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ type: "interrupt", reason }));
+      } catch {}
+    }
+
+    // 5. Reset states so assistant immediately listens
+    setIsAiSpeaking(false);
+    aiLevelRef.current = 0;
+    isWebSpeechSpeakingRef.current = false;
+    currentAiSentenceRef.current = "";
+
+    // 6. Ensure speech recognition is active and listening
+    if (!micMuted && selectedProvider === "web_speech" && recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch {}
+    }
+  }
 
   // Load preferences from localStorage
   useEffect(() => {
@@ -115,24 +161,34 @@ export default function VoiceFlightDeckModal({
   }, [isOpen]);
 
   // Execute a conversational turn using Free Web Speech API + backend Chat API
-  // Execute a conversational turn using Free Web Speech API + backend Chat API
   async function executeWebSpeechTurn(queryText: string) {
-    if (!queryText.trim() || isWebSpeechSpeakingRef.current) return;
+    const trimmed = queryText.trim();
+    if (!trimmed) return;
+
+    // Fast-path stop voice command check:
+    const isStopCommand = /^(stop|please stop|stop it|shut up|be quiet|quiet|pause|hold on|wait|listen|stop talking)[.!]?$/i.test(trimmed);
+    if (isStopCommand) {
+      interruptAndListen("stop_command");
+      setUserTranscript(trimmed);
+      setAiTranscript("Stopped. I'm listening...");
+      currentQueryRef.current = "";
+      return;
+    }
+
+    currentQueryRef.current = trimmed.toLowerCase();
+
+    // If already speaking, halt previous response before starting new turn
+    interruptAndListen("new_turn");
+
     isWebSpeechSpeakingRef.current = true;
+    setIsAiSpeaking(true);
+    setAiTranscript("Thinking...");
+    aiLevelRef.current = 0.5;
+
+    const abortController = new AbortController();
+    streamAbortControllerRef.current = abortController;
 
     try {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch {}
-      }
-
-      setAiTranscript("Listening...");
-      setIsAiSpeaking(true);
-      aiLevelRef.current = 0.6;
-
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-
       const token = typeof window !== "undefined"
         ? (localStorage.getItem("agent_pilot_token") || localStorage.getItem("docupilot_token"))
         : null;
@@ -141,38 +197,43 @@ export default function VoiceFlightDeckModal({
       let streamFinished = false;
 
       const finishSpeaking = () => {
+        if (abortController.signal.aborted) return;
         setIsAiSpeaking(false);
         aiLevelRef.current = 0;
         isWebSpeechSpeakingRef.current = false;
+        currentAiSentenceRef.current = "";
+        currentQueryRef.current = "";
         setUserTranscript("");
-        if (!micMuted && recognitionRef.current) {
-          try {
-            recognitionRef.current.abort();
-            setTimeout(() => {
-              try { recognitionRef.current?.start(); } catch {}
-            }, 100);
-          } catch {
-            try { recognitionRef.current.start(); } catch {}
-          }
-        }
       };
 
       const speakSentence = (sentenceText: string) => {
+        if (abortController.signal.aborted) return;
         const clean = sentenceText.replace(/[*#`_\[\]()]/g, " ").replace(/\s+/g, " ").trim();
         if (!clean || !/[a-zA-Z0-9]/.test(clean)) return;
 
         if (typeof window !== "undefined" && "speechSynthesis" in window) {
           pendingUtterances++;
+          currentAiSentenceRef.current = clean;
           const utter = new SpeechSynthesisUtterance(clean);
           utter.rate = 1.05;
           utter.pitch = 1.0;
+          utter.onstart = () => {
+            if (abortController.signal.aborted) {
+              window.speechSynthesis.cancel();
+              return;
+            }
+            setIsAiSpeaking(true);
+            aiLevelRef.current = 0.7;
+          };
           utter.onend = () => {
+            currentAiSentenceRef.current = "";
             pendingUtterances = Math.max(0, pendingUtterances - 1);
             if (streamFinished && pendingUtterances === 0) {
               finishSpeaking();
             }
           };
           utter.onerror = () => {
+            currentAiSentenceRef.current = "";
             pendingUtterances = Math.max(0, pendingUtterances - 1);
             if (streamFinished && pendingUtterances === 0) {
               finishSpeaking();
@@ -190,10 +251,11 @@ export default function VoiceFlightDeckModal({
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          message: queryText,
+          message: trimmed,
           thread_id: activeThreadId || undefined,
           mode: "voice",
         }),
+        signal: abortController.signal,
       });
 
       if (!res.ok) {
@@ -210,7 +272,7 @@ export default function VoiceFlightDeckModal({
       let fullTranscript = "";
       let spokenOffset = 0;
 
-      while (true) {
+      while (!abortController.signal.aborted) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -219,9 +281,10 @@ export default function VoiceFlightDeckModal({
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const dataStr = trimmed.slice(5).trim();
+          if (abortController.signal.aborted) break;
+          const lineTrimmed = line.trim();
+          if (!lineTrimmed.startsWith("data:")) continue;
+          const dataStr = lineTrimmed.slice(5).trim();
           if (dataStr === "[DONE]") continue;
 
           try {
@@ -247,6 +310,8 @@ export default function VoiceFlightDeckModal({
         }
       }
 
+      if (abortController.signal.aborted) return;
+
       // Speak any remaining unspoken tail
       const leftover = fullTranscript.slice(spokenOffset).trim();
       if (leftover) {
@@ -258,10 +323,14 @@ export default function VoiceFlightDeckModal({
         finishSpeaking();
       }
     } catch (err: any) {
+      if (err.name === "AbortError" || abortController.signal.aborted) {
+        return; // Interrupted intentionally
+      }
       setAiTranscript(`Could not generate response: ${err.message}`);
       setIsAiSpeaking(false);
       aiLevelRef.current = 0;
       isWebSpeechSpeakingRef.current = false;
+      currentQueryRef.current = "";
       if (!micMuted && recognitionRef.current) {
         try { recognitionRef.current.start(); } catch {}
       }
@@ -269,8 +338,11 @@ export default function VoiceFlightDeckModal({
   }
 
   // Connect to Chosen Voice Provider Session
-  async function connectSession(overrideProvider?: VoiceProviderId) {
+  async function connectSession(overrideProvider?: VoiceProviderId, overrideKey?: string) {
     const providerToUse = overrideProvider || selectedProvider;
+    const keyToUse = overrideKey !== undefined ? overrideKey : customKey;
+    setSelectedProvider(providerToUse);
+    if (overrideKey !== undefined) setCustomKey(overrideKey);
     setErrorMsg(null);
     setConnecting(true);
     pingStartRef.current = Date.now();
@@ -309,17 +381,45 @@ export default function VoiceFlightDeckModal({
           }
 
           const cleaned = cleanUserSpeech(fullTranscript);
-          if (cleaned) {
-            setUserTranscript(cleaned);
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-            // Intelligent natural pause detection: 1000ms after final phrase, 2200ms on interim thought
-            const debounceMs = hasFinal ? 1000 : 2200;
-            silenceTimerRef.current = setTimeout(() => {
-              if (!isWebSpeechSpeakingRef.current && cleaned) {
-                void executeWebSpeechTurn(cleaned);
-              }
-            }, debounceMs);
+          if (!cleaned) return;
+
+          // Check if AI is currently playing audio through speaker
+          const isActivelyPlayingAudio = (typeof window !== "undefined" && window.speechSynthesis?.speaking) || activeSourcesRef.current.length > 0;
+          const normalizeForCompare = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const normCleaned = normalizeForCompare(cleaned);
+          const normCurrentQuery = normalizeForCompare(currentQueryRef.current || "");
+          const isSameQuery = Boolean(normCurrentQuery && (
+            normCleaned === normCurrentQuery ||
+            normCurrentQuery.startsWith(normCleaned) ||
+            normCleaned.startsWith(normCurrentQuery)
+          ));
+
+          // Only barge-in if the assistant is ACTUALLY outputting audio, and this is NOT the same query we just submitted
+          if (isActivelyPlayingAudio && !isSameQuery) {
+            // Compare against current sentence to avoid self-echo from laptop speakers
+            const currentSentence = normalizeForCompare(currentAiSentenceRef.current || "");
+            const isEcho = Boolean(currentSentence && currentSentence.includes(normCleaned) && normCleaned.length < currentSentence.length * 0.8);
+
+            if (!isEcho) {
+              // User spoke while AI was speaking: stop immediately and listen!
+              interruptAndListen("user_spoke");
+              setAiTranscript("Listening to you...");
+              currentQueryRef.current = "";
+            } else {
+              return; // Ignore speaker echo
+            }
           }
+
+          setUserTranscript(cleaned);
+
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          // Intelligent natural pause detection: 900ms after final phrase, 1900ms on interim thought
+          const debounceMs = hasFinal ? 900 : 1900;
+          silenceTimerRef.current = setTimeout(() => {
+            if (cleaned && normalizeForCompare(cleaned) !== normalizeForCompare(currentQueryRef.current || "")) {
+              void executeWebSpeechTurn(cleaned);
+            }
+          }, debounceMs);
         };
 
         rec.onerror = (e: any) => {
@@ -334,7 +434,8 @@ export default function VoiceFlightDeckModal({
         };
 
         rec.onend = () => {
-          if (!micMuted && !isWebSpeechSpeakingRef.current && recognitionRef.current) {
+          // Keep recognition alive whenever mic is not muted, so user can speak anytime to interrupt
+          if (!micMuted && recognitionRef.current) {
             try { rec.start(); } catch {}
           }
         };
@@ -356,14 +457,16 @@ export default function VoiceFlightDeckModal({
           greeting.rate = 1.05;
           greeting.pitch = 1.0;
           setIsAiSpeaking(true);
+          currentAiSentenceRef.current = "Hello! I am listening. How can I help you today?";
           setAiTranscript("Hello! I am listening. How can I help you today?");
           greeting.onend = () => {
+            currentAiSentenceRef.current = "";
             setIsAiSpeaking(false);
           };
           window.speechSynthesis.speak(greeting);
         }
 
-        // Non-blocking mic visualizer setup in background
+        // Non-blocking mic visualizer & Acoustic VAD setup in background
         void (async () => {
           try {
             if (navigator?.mediaDevices?.getUserMedia) {
@@ -386,12 +489,33 @@ export default function VoiceFlightDeckModal({
               source.connect(analyser);
               const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
+              let vadFrames = 0;
               const updateVolume = () => {
                 if (!micStreamRef.current) return;
                 analyser.getByteFrequencyData(dataArray);
                 let sum = 0;
                 for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-                micLevelRef.current = Math.min((sum / dataArray.length) / 80, 1);
+                const level = Math.min((sum / dataArray.length) / 80, 1);
+                micLevelRef.current = level;
+
+                // Acoustic Barge-in VAD: Only if audio is actively playing through speakers
+                const isActivelyPlayingAudio = (typeof window !== "undefined" && window.speechSynthesis?.speaking) || activeSourcesRef.current.length > 0;
+                if (isActivelyPlayingAudio) {
+                  if (level > 0.35) {
+                    vadFrames++;
+                    if (vadFrames >= 4) { // ~60ms of voice
+                      interruptAndListen("vad_user_voice");
+                      setAiTranscript("Listening to you...");
+                      currentQueryRef.current = "";
+                      vadFrames = 0;
+                    }
+                  } else {
+                    vadFrames = Math.max(0, vadFrames - 1);
+                  }
+                } else {
+                  vadFrames = 0;
+                }
+
                 requestAnimationFrame(updateVolume);
               };
               updateVolume();
@@ -408,7 +532,7 @@ export default function VoiceFlightDeckModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: providerToUse,
-          customApiKey: customKey.trim(),
+          customApiKey: keyToUse.trim(),
         }),
       });
 
@@ -421,7 +545,7 @@ export default function VoiceFlightDeckModal({
         return;
       }
 
-      if (!tokenRes.ok && !customKey) {
+      if (!tokenRes.ok && !keyToUse.trim()) {
         throw new Error(tokenData.error || `Server returned ${tokenRes.status}`);
       }
 
@@ -432,10 +556,9 @@ export default function VoiceFlightDeckModal({
       audioOutputContextRef.current = outCtx;
       nextPlayTimeRef.current = outCtx.currentTime;
 
-      // 3. Setup Audio Input Context (16kHz linear PCM mono)
+      // 3. Setup Audio Input Context
       const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000,
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
@@ -444,8 +567,16 @@ export default function VoiceFlightDeckModal({
       });
       micStreamRef.current = micStream;
 
-      const inCtx = new AudioCtx({ sampleRate: 16000 });
-      await inCtx.resume();
+      const targetSampleRate = providerToUse === "openai" ? 24000 : 16000;
+      let inCtx: AudioContext;
+      try {
+        inCtx = new AudioCtx({ sampleRate: targetSampleRate });
+      } catch {
+        inCtx = new AudioCtx();
+      }
+      if (inCtx.state === "suspended") {
+        await inCtx.resume();
+      }
       audioInputContextRef.current = inCtx;
 
       // 4. Robust WebSocket URL construction (handles empty base on workers.dev origin)
@@ -457,11 +588,11 @@ export default function VoiceFlightDeckModal({
         wsBase = `${wsProto}//${window.location.host}`;
       }
 
-      let wsUrl = `${wsBase}/api/voice/ws?provider=${selectedProvider}&thread_id=${activeThreadId || ""}&voice=${encodeURIComponent(selectedVoice)}`;
+      let wsUrl = `${wsBase}/api/voice/ws?provider=${providerToUse}&thread_id=${activeThreadId || ""}&voice=${encodeURIComponent(selectedVoice)}`;
       if (tokenData.token) {
         wsUrl += `&token=${encodeURIComponent(tokenData.token)}`;
-      } else if (customKey.trim()) {
-        wsUrl += `&key=${encodeURIComponent(customKey.trim())}`;
+      } else if (keyToUse.trim()) {
+        wsUrl += `&key=${encodeURIComponent(keyToUse.trim())}`;
       }
 
       const ws = new WebSocket(wsUrl);
@@ -473,7 +604,7 @@ export default function VoiceFlightDeckModal({
         setLatencyMs(Math.max(15, Date.now() - pingStartRef.current));
 
         // Provider-specific initial handshake
-        if (selectedProvider === "gemini") {
+        if (providerToUse === "gemini") {
           const setupMsg = {
             setup: {
               model: "models/gemini-3.1-flash-live-preview",
@@ -517,23 +648,30 @@ export default function VoiceFlightDeckModal({
             return;
           }
 
+          // Handle Error Events from Upstream
+          if (msg.type === "error") {
+            setErrorMsg(msg.message || `Error from ${currentMeta.label}. Please verify your key.`);
+            setShowSettings(true);
+            disconnectSession();
+            return;
+          }
+
           // Handle Unified Server Content
           const serverContent = msg.serverContent;
           if (serverContent) {
             // Interruption signal
             if (serverContent.interrupted) {
-              stopAiPlayback();
-              setIsAiSpeaking(false);
+              interruptAndListen("server_interrupted");
             }
 
             // Input Transcription (User text)
             if (serverContent.inputTranscription?.text) {
-              setUserTranscript((prev) => `${prev} ${serverContent.inputTranscription.text}`.trim());
+              setUserTranscript(serverContent.inputTranscription.text);
             }
 
             // Output Transcription (AI text)
             if (serverContent.outputTranscription?.text) {
-              setAiTranscript((prev) => `${prev} ${serverContent.outputTranscription.text}`.trim());
+              setAiTranscript((prev) => prev + serverContent.outputTranscription.text);
 
               // Client-side TTS fallback for text-streaming providers
               if (selectedProvider === "anthropic" || selectedProvider === "groq") {
@@ -573,11 +711,16 @@ export default function VoiceFlightDeckModal({
     }
   }
 
-  // Mic 16kHz PCM streaming pipeline
+  // Mic 16kHz PCM streaming pipeline with smart VAD barge-in
   function startMicPipeline(inCtx: AudioContext, stream: MediaStream, ws: WebSocket) {
     const source = inCtx.createMediaStreamSource(stream);
     const processor = inCtx.createScriptProcessor(2048, 1, 1);
     processorRef.current = processor;
+    if (typeof window !== "undefined") {
+      (window as any).__voiceProcessor = processor;
+    }
+
+    let pcmVadFrames = 0;
 
     processor.onaudioprocess = (e) => {
       if (micMuted || ws.readyState !== WebSocket.OPEN) return;
@@ -587,7 +730,25 @@ export default function VoiceFlightDeckModal({
       // Volume calculation for visualizer
       let sum = 0;
       for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-      micLevelRef.current = Math.min(Math.sqrt(sum / inputData.length) * 4, 1);
+      const level = Math.min(Math.sqrt(sum / inputData.length) * 4, 1);
+      micLevelRef.current = level;
+
+      // Smart Barge-in VAD: If AI is actively outputting audio and user speaks into mic
+      if (activeSourcesRef.current.length > 0 || isAiSpeaking) {
+        if (level > 0.18) {
+          pcmVadFrames++;
+          // If voice energy sustained for ~120ms (3 chunks): stop AI playback and listen!
+          if (pcmVadFrames >= 3) {
+            interruptAndListen("pcm_vad_barge_in");
+            setAiTranscript((prev) => (prev ? `${prev} (Interrupted)` : ""));
+            pcmVadFrames = 0;
+          }
+        } else {
+          pcmVadFrames = Math.max(0, pcmVadFrames - 1);
+        }
+      } else {
+        pcmVadFrames = 0;
+      }
 
       // Convert Float32Array to 16-bit linear PCM little-endian
       const pcm16 = new Int16Array(inputData.length);
@@ -607,7 +768,7 @@ export default function VoiceFlightDeckModal({
         realtimeInput: {
           mediaChunks: [
             {
-              mimeType: "audio/pcm;rate=16000",
+              mimeType: `audio/pcm;rate=${inCtx.sampleRate}`,
               data: base64Audio,
             },
           ],
@@ -677,17 +838,7 @@ export default function VoiceFlightDeckModal({
 
   // Interruption
   function stopAiPlayback() {
-    activeSourcesRef.current.forEach((s) => {
-      try { s.stop(); } catch {}
-    });
-    activeSourcesRef.current = [];
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-    if (audioOutputContextRef.current) {
-      nextPlayTimeRef.current = audioOutputContextRef.current.currentTime;
-    }
-    setIsAiSpeaking(false);
+    interruptAndListen("manual_stop");
   }
 
   // Disconnect and release all resources
@@ -736,18 +887,44 @@ export default function VoiceFlightDeckModal({
     setLatencyMs(null);
   }
 
-  function handleSaveSettings() {
+  function handleSaveSettings(
+    newProvider: VoiceProviderId,
+    newKey: string,
+    newVoice: string,
+    newThinkingLevel: string
+  ) {
+    const provider = newProvider;
+    const key = newKey.trim();
+    const voice = newVoice;
+    const thinking = newThinkingLevel;
+
     if (typeof window !== "undefined") {
-      localStorage.setItem("AGENT_PILOT_VOICE_PROVIDER", selectedProvider);
-      localStorage.setItem(currentMeta.keyStorageKey, customKey.trim());
-      localStorage.setItem(`AGENT_PILOT_${selectedProvider.toUpperCase()}_VOICE`, selectedVoice);
-      if (selectedProvider === "gemini") {
-        localStorage.setItem("AGENT_PILOT_GEMINI_KEY", customKey.trim());
-        localStorage.setItem("AGENT_PILOT_VOICE", selectedVoice);
+      localStorage.setItem("AGENT_PILOT_VOICE_PROVIDER", provider);
+      localStorage.setItem(VOICE_PROVIDERS[provider].keyStorageKey, key);
+      localStorage.setItem(`AGENT_PILOT_${provider.toUpperCase()}_VOICE`, voice);
+      if (provider === "gemini") {
+        localStorage.setItem("AGENT_PILOT_GEMINI_KEY", key);
+        localStorage.setItem("AGENT_PILOT_VOICE", voice);
+      } else if (provider === "openai") {
+        localStorage.setItem("AGENT_PILOT_OPENAI_KEY", key);
+        localStorage.setItem("AGENT_PILOT_OPENAI_VOICE", voice);
       }
     }
+
+    setSelectedProvider(provider);
+    setCustomKey(key);
+    setSelectedVoice(voice);
+    setThinkingLevel(thinking);
     setShowSettings(false);
     setErrorMsg(null);
+
+    // Disconnect previous session and clear transcripts
+    disconnectSession();
+    setUserTranscript("");
+    setAiTranscript("");
+
+    // Automatically connect to the newly selected provider and key
+    void connectSession(provider, key);
   }
 
   if (!isOpen) return null;
@@ -806,14 +983,10 @@ export default function VoiceFlightDeckModal({
         {/* Settings Drawer */}
         {showSettings && (
           <VoiceSettingsDrawer
-            selectedProvider={selectedProvider}
-            onProviderChange={(id) => setSelectedProvider(id)}
-            customKey={customKey}
-            onCustomKeyChange={(key) => setCustomKey(key)}
-            selectedVoice={selectedVoice}
-            onVoiceChange={(v) => setSelectedVoice(v)}
-            thinkingLevel={thinkingLevel}
-            onThinkingLevelChange={(lvl) => setThinkingLevel(lvl)}
+            initialProvider={selectedProvider}
+            initialKey={customKey}
+            initialVoice={selectedVoice}
+            initialThinkingLevel={thinkingLevel}
             onSave={handleSaveSettings}
           />
         )}

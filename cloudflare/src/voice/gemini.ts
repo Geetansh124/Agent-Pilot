@@ -64,9 +64,22 @@ export class GeminiLiveProvider implements VoiceProvider {
   }
 
   sendToUpstream(data: string | ArrayBuffer): void {
-    if (!this.upstreamWs || this.upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!this.upstreamWs || !this._isConnected) return;
+    if (this.upstreamWs.readyState !== undefined && this.upstreamWs.readyState !== 1) return;
 
     if (typeof data === 'string') {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.type === 'interrupt') {
+          // Tell Gemini upstream the current turn is interrupted
+          this.upstreamWs.send(JSON.stringify({
+            clientContent: {
+              turnComplete: true,
+            },
+          }));
+          return;
+        }
+      } catch {}
       this.upstreamWs.send(data);
     } else {
       this.upstreamWs.send(data);
@@ -74,7 +87,8 @@ export class GeminiLiveProvider implements VoiceProvider {
   }
 
   sendToolResult(callId: string, output: any): void {
-    if (!this.upstreamWs || this.upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!this.upstreamWs || !this._isConnected) return;
+    if (this.upstreamWs.readyState !== undefined && this.upstreamWs.readyState !== 1) return;
 
     const responseMessage = {
       toolResponse: {

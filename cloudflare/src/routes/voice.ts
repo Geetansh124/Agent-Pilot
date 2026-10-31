@@ -51,7 +51,7 @@ voiceRouter.post('/token', async (c) => {
   }
 
   try {
-    let tokenResult: { token?: string; expireTime?: string; error?: string; requireCustomKey?: boolean };
+    let tokenResult: { token?: string; expireTime?: string; error?: string; requireCustomKey?: boolean } = {};
 
     switch (providerName) {
       case 'gemini':
@@ -67,12 +67,20 @@ voiceRouter.post('/token', async (c) => {
         break;
 
       case 'openai':
-        tokenResult = await OpenAIRealtimeProvider.createSessionToken(apiKey);
-        if (!tokenResult.error) {
+        if (apiKey) {
+          tokenResult = await OpenAIRealtimeProvider.createSessionToken(apiKey);
+          if (!tokenResult.error) {
+            return c.json({
+              ...tokenResult,
+              provider: 'openai',
+              model: PROVIDER_DEFAULTS.openai.defaultModel,
+            });
+          }
+          // Fallback: If session token generation fails, proceed via direct edge proxy with the API key!
           return c.json({
-            ...tokenResult,
             provider: 'openai',
             model: PROVIDER_DEFAULTS.openai.defaultModel,
+            message: 'Direct API key proxy ready',
           });
         }
         break;
@@ -206,7 +214,7 @@ voiceRouter.get('/ws', async (c) => {
         // clientSend callback — sends data to the browser
         (data: string) => {
           try {
-            if (serverWs.readyState !== WebSocket.OPEN) return;
+            if (serverWs.readyState !== undefined && serverWs.readyState !== 1) return;
 
             // Intercept tool_call events for edge execution
             let parsed: any = null;

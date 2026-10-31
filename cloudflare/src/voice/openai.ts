@@ -14,6 +14,38 @@ import { OPENAI_TOOLS } from '../tools/definitions';
 const OPENAI_REALTIME_BASE = 'wss://api.openai.com/v1/realtime';
 const OPENAI_REALTIME_MODEL = 'gpt-4o-realtime-preview';
 
+/** Resample linear PCM16 mono audio from any rate to 24kHz (linear interpolation) */
+function resamplePcm16To24k(base64Pcm16: string, sourceRate = 24000): string {
+  if (sourceRate === 24000 || !sourceRate) return base64Pcm16;
+
+  try {
+    const binary = atob(base64Pcm16);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const in16 = new Int16Array(bytes.buffer);
+    if (in16.length === 0) return base64Pcm16;
+
+    const ratio = sourceRate / 24000;
+    const outLen = Math.floor(in16.length / ratio);
+    const out16 = new Int16Array(outLen);
+
+    for (let i = 0; i < outLen; i++) {
+      const srcIdx = i * ratio;
+      const idx0 = Math.floor(srcIdx);
+      const idx1 = Math.min(idx0 + 1, in16.length - 1);
+      const frac = srcIdx - idx0;
+      out16[i] = Math.round(in16[idx0] * (1 - frac) + in16[idx1] * frac);
+    }
+
+    const outBytes = new Uint8Array(out16.buffer);
+    let outBinary = '';
+    for (let i = 0; i < outBytes.length; i++) outBinary += String.fromCharCode(outBytes[i]);
+    return btoa(outBinary);
+  } catch {
+    return base64Pcm16;
+  }
+}
+
 export class OpenAIRealtimeProvider implements VoiceProvider {
   readonly name: VoiceProviderName = 'openai';
 
@@ -21,6 +53,7 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
   private clientSend: ((data: string) => void) | null = null;
   private _isConnected = false;
   private config: VoiceSessionConfig | null = null;
+  private isResponseInProgress = false;
 
   get isConnected(): boolean {
     return this._isConnected;
@@ -30,73 +63,80 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
     this.clientSend = clientSend;
     this.config = config;
 
-    const model = OPENAI_REALTIME_MODEL;
-    const wsUrl = `${OPENAI_REALTIME_BASE}?model=${encodeURIComponent(model)}`;
+    const authKey = config.token || config.apiKey;
+    if (!authKey) {
+      throw new Error('API key or token is required for OpenAI Realtime.');
+    }
 
-    return new Promise<void>((resolve, reject) => {
-      try {
-        // OpenAI Realtime uses header auth — Cloudflare Workers WebSocket
-        // doesn't support custom headers, so we use the protocol-based auth.
-        // The API key is sent in a subprotocol header array.
-        this.upstreamWs = new WebSocket(wsUrl, [
-          'realtime',
-          `openai-insecure-api-key.${config.apiKey}`,
-          'openai-beta.realtime-v1',
-        ]);
+    const url = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(OPENAI_REALTIME_MODEL)}`;
 
-        this.upstreamWs.addEventListener('open', () => {
-          this._isConnected = true;
-          this.send({ type: 'status', message: 'connected_to_openai', provider: 'openai' });
+    // Cloudflare Workers requires fetch with Upgrade: websocket for authenticated upstream sockets
+    const resp = await fetch(url, {
+      headers: {
+        'Upgrade': 'websocket',
+        'Authorization': `Bearer ${authKey}`,
+        'OpenAI-Beta': 'realtime=v1',
+      },
+    });
 
-          // Send session.update to configure the session
-          this.sendSessionUpdate();
-          resolve();
-        });
+    const ws = (resp as any).webSocket;
+    if (!ws) {
+      const errText = await resp.text().catch(() => '');
+      throw new Error(`OpenAI Realtime WebSocket upgrade failed (${resp.status}): ${errText || resp.statusText}`);
+    }
 
-        this.upstreamWs.addEventListener('message', (event) => {
-          this.handleUpstreamMessage(event);
-        });
+    ws.accept();
+    this.upstreamWs = ws;
+    this._isConnected = true;
+    this.send({ type: 'status', message: 'connected_to_openai', provider: 'openai' });
 
-        this.upstreamWs.addEventListener('close', () => {
-          this._isConnected = false;
-          this.send({ type: 'status', message: 'disconnected', provider: 'openai' });
-        });
+    // Send session.update to configure session (modalities, voice, server VAD, etc.)
+    this.sendSessionUpdate();
 
-        this.upstreamWs.addEventListener('error', (e) => {
-          console.error('OpenAI Realtime upstream WebSocket error:', e);
-          this._isConnected = false;
-          this.send({ type: 'error', message: 'OpenAI Realtime WebSocket error', provider: 'openai' });
-        });
-      } catch (err: any) {
-        reject(err);
-      }
+    ws.addEventListener('message', (event: any) => {
+      this.handleUpstreamMessage(event);
+    });
+
+    ws.addEventListener('close', () => {
+      this._isConnected = false;
+      this.isResponseInProgress = false;
+      this.send({ type: 'status', message: 'disconnected', provider: 'openai' });
+    });
+
+    ws.addEventListener('error', (e: any) => {
+      console.error('OpenAI Realtime upstream WebSocket error:', e);
+      this._isConnected = false;
+      this.isResponseInProgress = false;
+      this.send({ type: 'error', message: 'OpenAI Realtime WebSocket error', provider: 'openai' });
     });
   }
 
   /**
    * Forward client messages to OpenAI Realtime.
-   *
-   * The client sends Gemini-format messages by default.
-   * We translate `realtimeInput` audio packets into OpenAI's
-   * `input_audio_buffer.append` format.
+   * Translates Gemini-format audio input → OpenAI format.
+   * Resamples PCM from any source rate to native 24kHz PCM.
    */
   sendToUpstream(data: string | ArrayBuffer): void {
-    if (!this.upstreamWs || this.upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!this.upstreamWs || !this._isConnected) return;
+    if (this.upstreamWs.readyState !== undefined && this.upstreamWs.readyState !== 1) return;
 
     if (typeof data !== 'string') {
-      // Binary frames not used in OpenAI Realtime — skip
       return;
     }
 
     try {
       const msg = JSON.parse(data);
 
-      // Translate Gemini-format audio input → OpenAI format
+      // Translate audio input packets → OpenAI format (with 24kHz check/resampling)
       if (msg.realtimeInput?.mediaChunks) {
         for (const chunk of msg.realtimeInput.mediaChunks) {
+          const rateMatch = chunk.mimeType?.match(/rate=(\d+)/);
+          const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+          const audioPayload = resamplePcm16To24k(chunk.data, sampleRate);
+
           this.upstreamWs.send(JSON.stringify({
             type: 'input_audio_buffer.append',
-            audio: chunk.data,  // Base64 PCM
+            audio: audioPayload,
           }));
         }
         return;
@@ -104,20 +144,30 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
 
       // Translate Gemini-format setup → handled in sendSessionUpdate()
       if (msg.setup) {
-        // Already configured on connect, ignore duplicate
         return;
       }
 
-      // Forward any other messages as-is (provider-native)
+      // Handle interrupt signal from client (only cancel if a model response is actually in progress)
+      if (msg.type === 'interrupt') {
+        if (this.isResponseInProgress) {
+          try {
+            this.upstreamWs.send(JSON.stringify({ type: 'response.cancel' }));
+          } catch {}
+          this.isResponseInProgress = false;
+        }
+        return;
+      }
+
+      // Forward any other messages as-is
       this.upstreamWs.send(data);
     } catch {
-      // Non-JSON data, forward raw
       this.upstreamWs.send(data);
     }
   }
 
   sendToolResult(callId: string, output: any): void {
-    if (!this.upstreamWs || this.upstreamWs.readyState !== WebSocket.OPEN) return;
+    if (!this.upstreamWs || !this._isConnected) return;
+    if (this.upstreamWs.readyState !== undefined && this.upstreamWs.readyState !== 1) return;
 
     // Send function call output
     this.upstreamWs.send(JSON.stringify({
@@ -172,6 +222,7 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
           threshold: 0.5,
           prefix_padding_ms: 300,
           silence_duration_ms: 500,
+          create_response: true,
         },
         tools,
         tool_choice: 'auto',
@@ -193,6 +244,10 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
         case 'session.created':
         case 'session.updated':
           // Session metadata — no-op, already notified
+          break;
+
+        case 'response.created':
+          this.isResponseInProgress = true;
           break;
 
         case 'response.audio.delta':
@@ -245,7 +300,7 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
           break;
 
         case 'input_audio_buffer.speech_started':
-          // User started speaking — signal interruption
+          // User started speaking — signal interruption to client so client stops playing previous AI audio
           this.send({
             serverContent: { interrupted: true },
           });
@@ -261,7 +316,8 @@ export class OpenAIRealtimeProvider implements VoiceProvider {
           break;
 
         case 'response.done':
-          // Response finished — no action needed
+        case 'response.cancelled':
+          this.isResponseInProgress = false;
           break;
 
         default:
