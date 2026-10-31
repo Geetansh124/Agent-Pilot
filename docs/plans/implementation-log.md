@@ -101,3 +101,13 @@ Evidence: Verified per-tenant and aggregate token/cost accounting, structured au
 Deviations: none
 Risks / follow-ups: Proceed to Phase 8 hardening, chaos matrix, and rollout runbook
 Next: Phase 8 — Hardening, chaos matrix & rollout (HP-080 … HP-085)
+
+### PHASE 8 — Hardening, chaos matrix & rollout
+Status: complete
+Tickets: HP-080 … HP-085
+Changed: src/harness/runtime.py, docs/plans/rollout-runbook.md, tests/test_harness_chaos.py
+Tests: python -m unittest tests/test_harness_chaos.py (7 passed); python -m unittest discover (169 passed, 0 failed)
+Evidence: Verified process-kill graceful degradation, corrupted JSONL tail resilience, fail-closed expired approvals, LRU runtime eviction under pool exhaustion, directory traversal containment, credential redaction security audit, multi-tenant isolation, operational rollout runbook with rollback procedures, and full regression green suite (169/169 passed)
+Deviations: none
+Risks / follow-ups: All gates passed; ready for Canary Stage 1 deployment (AGENT_BACKEND=shadow)
+Next: ALL PHASES COMPLETE (HP-001 … HP-085)

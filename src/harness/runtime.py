@@ -152,6 +152,11 @@ class RuntimeSupervisor:
             self._runtimes[uid].close()
             del self._runtimes[uid]
 
+    @property
+    def active_count(self) -> int:
+        with self._pool_lock:
+            return len(self._runtimes)
+
     def close_all(self) -> None:
         """Shutdown supervisor and reap all child runtimes."""
         with self._pool_lock:
