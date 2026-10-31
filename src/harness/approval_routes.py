@@ -96,3 +96,14 @@ def submit_thread_question(
     except DecisionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
+
+@approval_router.get("/api/admin/metrics/harness")
+def get_harness_admin_metrics(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Retrieve aggregate and per-tenant Harness metrics snapshot (Admin only)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required.")
+    from src.harness.metrics import get_metrics_tracker
+    return get_metrics_tracker().get_summary()
+

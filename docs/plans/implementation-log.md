@@ -91,3 +91,13 @@ Evidence: Verified TypeScript stream-forwarder build, real-time ap/stream delta 
 Deviations: none
 Risks / follow-ups: build metrics accounting and quota controls in Phase 7
 Next: Phase 7 — Observability, metrics & quota controls (HP-070 … HP-074)
+
+### PHASE 7 — Observability, metrics & quota controls
+Status: complete
+Tickets: HP-070 … HP-074
+Changed: src/harness/metrics.py, src/harness/backend.py, src/harness/approval_routes.py, api_server.py, tests/test_harness_quotas.py
+Tests: python -m unittest tests/test_harness_quotas.py (6 passed); python -m unittest (162 passed, 0 failed)
+Evidence: Verified per-tenant and aggregate token/cost accounting, structured audit records (harness_turn_start, harness_turn_end, harness_tool_call, harness_quota_exceeded), concurrency & tool quotas returning 429 with Retry-After header, and admin-only metrics endpoint at GET /api/admin/metrics/harness (200 for admin, 403 for standard user)
+Deviations: none
+Risks / follow-ups: Proceed to Phase 8 hardening, chaos matrix, and rollout runbook
+Next: Phase 8 — Hardening, chaos matrix & rollout (HP-080 … HP-085)

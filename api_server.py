@@ -337,7 +337,7 @@ def chat(
                 if tool_name and tool_name not in tools:
                     tools.append(tool_name)
             elif evt.get("type") == "error":
-                raise HTTPException(status_code=503, detail=evt.get("message", "Chat error"))
+                st = 429 if evt.get("status") == 429 or "exceeded" in evt.get("message", "").lower() else 503; raise HTTPException(status_code=st, detail=evt.get("message", "Chat error"), headers={"Retry-After": "5"} if st == 429 else None)
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as exc:

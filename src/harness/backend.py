@@ -8,7 +8,8 @@ import time
 from typing import Any, Generator, Optional
 
 from src.harness.config import HarnessSettings, get_harness_settings
-from src.harness.errors import HarnessError, RuntimeUnavailable, SessionBusy
+from src.harness.errors import HarnessError, QuotaExceeded, RuntimeUnavailable, SessionBusy
+from src.harness.metrics import get_metrics_tracker
 from src.harness.runtime import get_runtime_supervisor
 from src.harness.sessions import get_session_mapper
 from src.harness.store import upsert_harness_session
@@ -39,6 +40,13 @@ class HarnessBackend:
         harness_session_id = self.mapper.get_harness_session_id(thread_id)
         upsert_harness_session(thread_id, user_id, harness_session_id)
 
+        metrics = get_metrics_tracker()
+        try:
+            metrics.start_turn(tenant_id=user_id, thread_id=thread_id, settings=self.settings)
+        except QuotaExceeded as qe:
+            yield {"type": "error", "status": 429, "message": str(qe), "retry_after": 5}
+            return
+
         translator = EventTranslator()
         event_queue: queue.Queue[Optional[dict[str, Any]]] = queue.Queue()
 
@@ -47,6 +55,15 @@ class HarnessBackend:
             wire = HarnessWireClient(runtime)
 
             def on_notification(notification: dict[str, Any]) -> None:
+                method = notification.get("method")
+                params = notification.get("params", {})
+                if method == "session.event" and params.get("type") == "tool/call":
+                    t_name = params.get("data", {}).get("name", "unknown")
+                    try:
+                        metrics.record_tool_call(tenant_id=user_id, thread_id=thread_id, tool_name=t_name, settings=self.settings)
+                    except QuotaExceeded as tool_qe:
+                        event_queue.put({"type": "error", "status": 429, "message": str(tool_qe), "retry_after": 5})
+                        return
                 for sse_evt in translator.translate_event(notification):
                     event_queue.put(sse_evt)
 
@@ -88,8 +105,14 @@ class HarnessBackend:
 
                 # Record usage telemetry
                 final_text = "".join(translator.collected_tokens)
-                cost_tracker.record_usage(
-                    thread_id, prompt_toks, estimate_token_count(final_text)
+                comp_toks = estimate_token_count(final_text)
+                cost_tracker.record_usage(thread_id, prompt_toks, comp_toks)
+                metrics.end_turn(
+                    tenant_id=user_id,
+                    thread_id=thread_id,
+                    prompt_tokens=prompt_toks,
+                    completion_tokens=comp_toks,
+                    model=self.settings.model,
                 )
                 audit_logger.log(
                     "harness_turn_end",
