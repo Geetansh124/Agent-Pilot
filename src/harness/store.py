@@ -21,6 +21,19 @@ def upsert_harness_session(
     session_pk = str(uuid.uuid4())
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS harness_sessions (
+                id TEXT PRIMARY KEY,
+                thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                harness_session_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                last_event_seq INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(thread_id)
+            );
+        """)
         _ensure_user_exists(cursor, user_id)
         cursor.execute(
             """
@@ -48,15 +61,18 @@ def upsert_harness_session(
 
 def get_harness_session(thread_id: str, db_path: Optional[str] = None) -> Optional[dict[str, Any]]:
     """Retrieve harness session record by thread ID."""
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, thread_id, user_id, harness_session_id, status, last_event_seq, created_at, updated_at "
-            "FROM harness_sessions WHERE thread_id = ?",
-            (thread_id,),
-        )
-        row = cursor.fetchone()
-        return dict(row) if row else None
+    try:
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, thread_id, user_id, harness_session_id, status, last_event_seq, created_at, updated_at "
+                "FROM harness_sessions WHERE thread_id = ?",
+                (thread_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    except sqlite3.OperationalError:
+        return None
 
 
 def verify_session_ownership(thread_id: str, user_id: str, db_path: Optional[str] = None) -> bool:

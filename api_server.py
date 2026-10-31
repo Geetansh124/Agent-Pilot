@@ -90,15 +90,17 @@ class ChatRequest(BaseModel):
     doc_id: str | None = Field(default=None, max_length=100)
     response_format: str | None = Field(default=None, max_length=20)
 
-
 class UpdateThreadRequest(BaseModel):
     title: str = Field(min_length=1, max_length=100)
-
 
 class ChatResponse(BaseModel):
     thread_id: str
     message: str
     tools_used: list[str] = []
+
+class TokenRequest(BaseModel):
+    username: str
+    password: str
 
 
 # ---------------------------------------------------------------------------
@@ -113,17 +115,6 @@ def _messages(thread_id: str) -> list[dict[str, str]]:
         elif isinstance(message, AIMessage) and message.content:
             result.append({"role": "assistant", "content": str(message.content)})
     return result
-
-
-def _chat_config(thread_id: str, response_format: str | None = None) -> dict:
-    return {
-        "configurable": {
-            "thread_id": thread_id,
-            "response_format": response_format or "text",
-        },
-        "metadata": {"thread_id": thread_id},
-        "run_name": "chat_turn",
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -332,26 +323,32 @@ def chat(
         raise HTTPException(status_code=429, detail=budget_err)
 
     t0 = time.time()
-    config = _chat_config(request.thread_id, request.response_format)
-    parts: list[str] = []
+    from src.harness.router import route_chat_stream
+    tokens: list[str] = []
     tools: list[str] = []
     try:
-        for chunk, _ in chatbot.stream(
-            {"messages": [HumanMessage(content=request.message)]},
-            config=config,
-            stream_mode="messages",
+        for evt in route_chat_stream(
+            message=request.message,
+            thread_id=request.thread_id,
+            user_id=user_id,
+            doc_id=request.doc_id,
+            response_format=request.response_format,
         ):
-            if isinstance(chunk, ToolMessage):
-                name = getattr(chunk, "name", None)
-                if name and name not in tools:
-                    tools.append(name)
-            elif isinstance(chunk, AIMessage) and chunk.content:
-                parts.append(str(chunk.content))
+            if evt.get("type") == "token":
+                tokens.append(evt.get("content", ""))
+            elif evt.get("type") == "tool":
+                tool_name = evt.get("name")
+                if tool_name and tool_name not in tools:
+                    tools.append(tool_name)
+            elif evt.get("type") == "error":
+                raise HTTPException(status_code=503, detail=evt.get("message", "Chat error"))
+    except HTTPException:
+        raise
     except (RuntimeError, ValueError) as exc:
         audit_logger.log("chat_error", str(exc), request.thread_id, status="failed")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    final_msg = sanitize_output("".join(parts))
+    final_msg = sanitize_output("".join(tokens))
     dur_ms = (time.time() - t0) * 1000
     cost_tracker.record_usage(request.thread_id, prompt_toks, estimate_token_count(final_msg))
     audit_logger.log("chat_request", "POST /api/chat", request.thread_id, status="success", duration_ms=dur_ms, details={"tools_used": tools})
@@ -401,32 +398,30 @@ def chat_stream(
         return f"data: {json.dumps(data)}\n\n"
 
     def event_generator():
-        config = _chat_config(request.thread_id, request.response_format)
+        from src.harness.router import route_chat_stream
         tools_used: list[str] = []
         collected_tokens: list[str] = []
         try:
-            for chunk, _ in chatbot.stream(
-                {"messages": [HumanMessage(content=request.message)]},
-                config=config,
-                stream_mode="messages",
+            for evt in route_chat_stream(
+                message=request.message,
+                thread_id=request.thread_id,
+                user_id=user_id,
+                doc_id=request.doc_id,
+                response_format=request.response_format,
             ):
-                if isinstance(chunk, ToolMessage):
-                    name = getattr(chunk, "name", None)
+                if evt.get("type") == "token":
+                    collected_tokens.append(evt.get("content", ""))
+                elif evt.get("type") == "tool":
+                    name = evt.get("name")
                     if name and name not in tools_used:
                         tools_used.append(name)
-                        yield _event({"type": "tool", "name": name})
-                elif isinstance(chunk, AIMessage) and chunk.content:
-                    tok = sanitize_output(str(chunk.content))
-                    collected_tokens.append(tok)
-                    yield _event({"type": "token", "content": tok})
-            cost_tracker.record_usage(request.thread_id, prompt_toks, estimate_token_count("".join(collected_tokens)))
-            audit_logger.log("chat_stream", "POST /api/chat/stream", request.thread_id, status="success", details={"tools": tools_used})
-            if hasattr(storage, "sync_database"):
-                try:
-                    storage.sync_database("chatbot.db")
-                except Exception:
-                    pass
-            yield _event({"type": "done", "tools_used": tools_used})
+                elif evt.get("type") == "done":
+                    cost_tracker.record_usage(request.thread_id, prompt_toks, estimate_token_count("".join(collected_tokens)))
+                    audit_logger.log("chat_stream", "POST /api/chat/stream", request.thread_id, status="success", details={"tools": tools_used})
+                    if hasattr(storage, "sync_database"):
+                        try: storage.sync_database("chatbot.db")
+                        except Exception: pass
+                yield _event(evt)
         except (RuntimeError, ValueError) as exc:
             yield _event({"type": "error", "message": str(exc)})
 
@@ -493,11 +488,6 @@ async def mcp_endpoint(request: Request) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Auth, HITL & Observability Endpoints
 # ---------------------------------------------------------------------------
-class TokenRequest(BaseModel):
-    username: str
-    password: str
-
-
 @app.post("/api/auth/token")
 def login_for_token(req: TokenRequest) -> dict[str, Any]:
     """Issue a JWT token for user credentials."""
