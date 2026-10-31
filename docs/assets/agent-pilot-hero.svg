@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="310" viewBox="0 0 1200 310" role="img" aria-labelledby="title desc">
+  <title id="title">Agent-Pilot flight-control banner</title>
+  <desc id="desc">A navy flight-control display with a cyan route, waypoint markers, and a small aircraft icon.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111f"/><stop offset="1" stop-color="#10243b"/></linearGradient>
+    <linearGradient id="line" x1="0" x2="1"><stop stop-color="#22d3ee" stop-opacity=".22"/><stop offset=".5" stop-color="#67e8f9"/><stop offset="1" stop-color="#22d3ee" stop-opacity=".28"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#22d3ee" stop-opacity=".22"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+    <style>@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}@keyframes drift{to{stroke-dashoffset:-80}}.pulse{animation:pulse 3.2s ease-in-out infinite}.route{stroke-dasharray:5 12;animation:drift 8s linear infinite}@media(prefers-reduced-motion:reduce){.pulse,.route{animation:none}}</style>
+  </defs>
+  <rect width="1200" height="310" rx="24" fill="url(#bg)"/>
+  <circle cx="910" cy="150" r="250" fill="url(#glow)"/>
+  <path d="M24 70H1176M24 240H1176" stroke="#6f8eaa" stroke-opacity=".14"/>
+  <path d="M80 0V310M1120 0V310" stroke="#6f8eaa" stroke-opacity=".12"/>
+  <g fill="#9fb6c9" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="11" letter-spacing="2">
+    <text x="56" y="47">AGENT-PILOT / CONTROL PLANE</text><text x="56" y="275">DOCUMENT CONTEXT · GRAPH ROUTING · STREAMED OUTPUT</text><text x="1040" y="47">LOCAL / DEV</text>
+  </g>
+  <path d="M138 157C270 157 281 112 414 112S555 192 691 192 835 126 963 126 1033 157 1080 157" fill="none" stroke="#1c435a" stroke-width="3"/>
+  <path class="route" d="M138 157C270 157 281 112 414 112S555 192 691 192 835 126 963 126 1033 157 1080 157" fill="none" stroke="url(#line)" stroke-width="3" stroke-linecap="round"/>
+  <g fill="#07111f" stroke="#67e8f9" stroke-width="2"><circle cx="138" cy="157" r="8"/><circle cx="414" cy="112" r="8"/><circle cx="691" cy="192" r="8"/><circle cx="963" cy="126" r="8"/><circle cx="1080" cy="157" r="8"/></g>
+  <g class="pulse" fill="#67e8f9"><circle cx="414" cy="112" r="3"/><circle cx="963" cy="126" r="3"/></g>
+  <g fill="#d8e8f2" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="600" text-anchor="middle"><text x="138" y="191">CLIENT</text><text x="414" y="85">API</text><text x="691" y="225">AGENT GRAPH</text><text x="963" y="99">RETRIEVE / TOOLS</text><text x="1080" y="191">STREAM</text></g>
+  <g transform="translate(805 166) rotate(-10)" fill="#a5f3fc"><path d="M0 0 32-9 18 0 32 9Z"/><path d="M12 0 3-6 7 0 3 6Z" fill="#22d3ee"/></g>
+  <rect x="24" y="24" width="1152" height="262" rx="18" fill="none" stroke="#8bb6cf" stroke-opacity=".2"/>
+</svg>

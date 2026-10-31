@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+  <title id="title">Agent-Pilot conceptual workflow</title>
+  <desc id="desc">Conceptual request flow: client to FastAPI to LangGraph, then hybrid retrieval and optional tools, storage, and a streamed response.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111f"/><stop offset="1" stop-color="#10243b"/></linearGradient>
+    <linearGradient id="edge" x1="0" x2="1"><stop stop-color="#22d3ee" stop-opacity=".35"/><stop offset=".5" stop-color="#67e8f9"/><stop offset="1" stop-color="#22d3ee" stop-opacity=".35"/></linearGradient>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#67e8f9"/></marker>
+    <style>@keyframes travel{to{stroke-dashoffset:-60}}.flow{stroke-dasharray:4 10;animation:travel 7s linear infinite}@media(prefers-reduced-motion:reduce){.flow{animation:none}}</style>
+  </defs>
+  <rect width="1200" height="460" rx="24" fill="url(#bg)"/>
+  <text x="52" y="54" fill="#d9edf7" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="21" font-weight="700">A request through Agent-Pilot</text>
+  <text x="52" y="80" fill="#8ba8bc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13">CONCEPTUAL FLOW · OPTIONAL SERVICES REQUIRE CONFIGURATION</text>
+  <g stroke="#85a9c1" stroke-opacity=".2"><path d="M52 102H1148"/><path d="M52 390H1148"/></g>
+  <g fill="none" stroke="#1c435a" stroke-width="3" marker-end="url(#arrow)">
+    <path d="M208 190H274"/><path d="M432 190H498"/><path d="M656 190H722"/><path d="M880 190H946"/>
+    <path d="M800 226V300H872"/><path d="M1018 334H1090V244"/>
+  </g>
+  <g fill="none" stroke="url(#edge)" stroke-width="3" marker-end="url(#arrow)" class="flow">
+    <path d="M208 190H274"/><path d="M432 190H498"/><path d="M656 190H722"/><path d="M880 190H946"/><path d="M800 226V300H872"/>
+  </g>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" text-anchor="middle">
+    <g><rect x="52" y="150" width="156" height="80" rx="14" fill="#0b1b2a" stroke="#34708a"/><text x="130" y="184" fill="#e1f4fb" font-size="16" font-weight="700">Client</text><text x="130" y="207" fill="#8faabd" font-size="12">prompt / document</text></g>
+    <g><rect x="276" y="150" width="156" height="80" rx="14" fill="#0b1b2a" stroke="#34708a"/><text x="354" y="184" fill="#e1f4fb" font-size="16" font-weight="700">FastAPI</text><text x="354" y="207" fill="#8faabd" font-size="12">request boundary</text></g>
+    <g><rect x="500" y="150" width="156" height="80" rx="14" fill="#10283a" stroke="#22d3ee"/><text x="578" y="184" fill="#e1f4fb" font-size="16" font-weight="700">LangGraph</text><text x="578" y="207" fill="#8faabd" font-size="12">workflow routing</text></g>
+    <g><rect x="724" y="150" width="156" height="80" rx="14" fill="#0b1b2a" stroke="#34708a"/><text x="802" y="181" fill="#e1f4fb" font-size="15" font-weight="700">Hybrid RAG</text><text x="802" y="204" fill="#8faabd" font-size="12">retrieval + context</text></g>
+    <g><rect x="948" y="150" width="156" height="80" rx="14" fill="#0b1b2a" stroke="#34708a"/><text x="1026" y="184" fill="#e1f4fb" font-size="16" font-weight="700">Tools</text><text x="1026" y="207" fill="#8faabd" font-size="12">optional / configured</text></g>
+    <g><rect x="872" y="300" width="146" height="68" rx="14" fill="#0b1b2a" stroke="#536a85"/><text x="945" y="329" fill="#e1f4fb" font-size="15" font-weight="700">Storage</text><text x="945" y="350" fill="#8faabd" font-size="12">local / optional cloud</text></g>
+  </g>
+  <path d="M130 244V324H812" fill="none" stroke="#46647a" stroke-width="2" stroke-dasharray="5 7" marker-end="url(#arrow)"/>
+  <rect x="453" y="306" width="270" height="36" rx="18" fill="#0b1b2a" stroke="#28556e"/>
+  <text x="588" y="329" fill="#a5f3fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" font-weight="600" text-anchor="middle">SSE streamed response to client</text>
+  <text x="52" y="424" fill="#7794a8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12">Conceptual illustration; actual routes and integrations depend on the deployed revision and configuration.</text>
+</svg>
