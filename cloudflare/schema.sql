@@ -71,3 +71,33 @@ CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, created_at
 -- Seed guest user
 INSERT OR IGNORE INTO users (id, email, hashed_password, salt, full_name, role, provider)
 VALUES ('guest', 'guest@agentpilot.local', 'disabled', 'disabled', 'Guest User', 'guest', 'system');
+
+-- DeepSeek Harness Additive State
+CREATE TABLE IF NOT EXISTS harness_sessions (
+    thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    harness_session_id TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS harness_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(thread_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS harness_approvals (
+    request_id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    tool_name TEXT NOT NULL,
+    arguments TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('pending', 'allowed-once', 'rejected', 'cancelled')),
+    decided_by TEXT REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    decided_at TEXT
+);
