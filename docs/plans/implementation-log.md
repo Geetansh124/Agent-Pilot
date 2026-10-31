@@ -10,8 +10,8 @@
 | Phase | Description | Tickets | Status | Gate Command & Evidence |
 |---|---|---|---|---|
 | **Phase 0** | Feasibility Gate & Foundation | HP-001 … HP-006 | COMPLETE | `scripts/spike_minimal.py`, fixtures, sandbox confinement |
-| **Phase 1** | Supervisor & Tenancy | HP-010 … HP-015 | IN PROGRESS | `test_harness_supervisor.py` green, 2-tenant isolation |
-| **Phase 2** | Chat Backend & SSE Stream | HP-020 … HP-025 | PENDING | `test_harness_chat.py` green, SSE parity verified |
+| **Phase 1** | Supervisor & Tenancy | HP-010 … HP-015 | COMPLETE | `test_harness_supervisor.py` green, 2-tenant isolation |
+| **Phase 2** | Chat Backend & SSE Stream | HP-020 … HP-025 | IN PROGRESS | `test_harness_chat.py` green, SSE parity verified |
 | **Phase 3** | Authenticated MCP Bridge | HP-030 … HP-034 | PENDING | `test_harness_mcp.py` green, bearer auth, RAG parity |
 | **Phase 4** | Approvals & HITL Gate | HP-040 … HP-044 | PENDING | `test_harness_approvals.py` green, fail-closed verified |
 | **Phase 5** | Persistence & State Sync | HP-050 … HP-055 | PENDING | `test_harness_persistence.py` green, crash recovery |
@@ -31,3 +31,13 @@ Evidence: docs/plans/spike-report.md, tests/fixtures/harness/sandbox.md
 Deviations: none
 Risks / follow-ups: Ensure process supervisor bounds max child memory in Phase 1
 Next: Phase 1 — Supervisor and tenancy (HP-010 … HP-015)
+
+### PHASE 1 — Supervisor and tenancy
+Status: complete
+Tickets: HP-010 … HP-015
+Changed: src/harness/errors.py, src/harness/runtime.py, src/harness/sessions.py, src/harness/store.py, src/auth/database.py, tests/test_harness_supervisor.py
+Tests: python -m unittest tests/test_harness_supervisor.py (6 passed); python -m unittest (130 passed, 0 failed)
+Evidence: distinct salted homes verified, cross-tenant resume denial verified, LRU eviction and child process reaping verified
+Deviations: none
+Risks / follow-ups: enforce session lock during SSE streaming turn
+Next: Phase 2 — Chat backend and SSE (HP-020 … HP-025)

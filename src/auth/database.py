@@ -68,12 +68,27 @@ def init_auth_db(db_path: Optional[str] = None) -> None:
                 role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')), content TEXT NOT NULL, tool_calls JSON, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS harness_sessions (
+                id TEXT PRIMARY KEY,
+                thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                harness_session_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                last_event_seq INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(thread_id)
+            );
+        """)
         for idx_sql in (
             "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);",
             "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_threads_user ON threads(user_id, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_harness_sessions_thread ON harness_sessions(thread_id);",
+            "CREATE INDEX IF NOT EXISTS idx_harness_sessions_user ON harness_sessions(user_id);",
         ):
             cursor.execute(idx_sql)
 
