@@ -1,213 +1,176 @@
-# Agent-Pilot ✈️
-### Multi-Tenant Autonomous Agent Platform with Hybrid RAG & Cloud Persistence
+<div align="center">
+  <img src="docs/assets/agent-pilot-hero.svg" alt="Agent-Pilot flight-control banner" width="100%" />
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
-[![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-purple.svg)](https://github.com/langchain-ai/langgraph)
-[![Vector Store](https://img.shields.io/badge/Vector%20Store-FAISS-green.svg)](https://github.com/facebookresearch/faiss)
-[![Tests Passing](https://img.shields.io/badge/Tests-119%20Passed-brightgreen.svg)]()
+  <h1>Agent-Pilot</h1>
+  <p><strong>A document-grounded AI workspace with a graph-based agent workflow.</strong></p>
+  <p><a href="https://github.com/Geetansh124/Agent-Pilot">Repository</a> · <a href="https://github.com/Geetansh124/Agent-Pilot/tree/main/docs">Documentation</a></p>
+  <p>
+    <a href="https://opensource.org/licenses/MIT"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-7dd3fc?style=for-the-badge&labelColor=0b1220"></a>
+    <a href="https://www.python.org/"><img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-38bdf8?style=for-the-badge&labelColor=0b1220"></a>
+    <a href="https://nextjs.org/"><img alt="Next.js" src="https://img.shields.io/badge/frontend-Next.js-22d3ee?style=for-the-badge&labelColor=0b1220"></a>
+    <a href="https://github.com/langchain-ai/langgraph"><img alt="LangGraph" src="https://img.shields.io/badge/workflow-LangGraph-a78bfa?style=for-the-badge&labelColor=0b1220"></a>
+  </p>
+</div>
 
----
+> **Status:** research and development. Run locally with your own provider credentials. No hosted demo is linked while the public deployment is unavailable.
 
-## 🌟 Overview
+## What it does
 
-**Agent-Pilot** is an enterprise-grade autonomous AI workspace and conversational agent platform. Powered by **LangGraph**, **NVIDIA AI Foundation models**, and a **hybrid dense-sparse RAG engine**, Agent-Pilot enables users to upload heterogeneous documents (PDF, DOCX, TXT, CSV, JSON), index them into persistent multi-tenant vector stores, and execute complex workflows with real-time SSE streaming, live tool execution, and cloud storage persistence.
+Agent-Pilot brings document question-answering and tool-using AI workflows into one workspace. Add documents, retrieve relevant context, route a request through a LangGraph workflow, and return a response through the web client. The repository includes a Next.js frontend, a FastAPI service, retrieval components, and optional storage/tool integrations. Which integrations work depends on local configuration and credentials.
 
----
+## Contents
 
-## 🏗️ Architecture
+- [At a glance](#at-a-glance)
+- [Product experience](#product-experience)
+- [Architecture](#architecture)
+- [Capabilities in the codebase](#capabilities-in-the-codebase)
+- [Quickstart](#quickstart)
+- [Configuration](#configuration)
+- [API surface](#api-surface)
+- [Validation](#validation)
+- [Status and limitations](#status-and-limitations)
+- [Security and responsible use](#security-and-responsible-use)
+- [License](#license)
 
-```
-                  ┌───────────────────────────────────────────────┐
-                  │           Next.js 14 Modern Client            │
-                  │   Glassmorphic UI • SSE Stream • Doc Hub      │
-                  └───────────────────────┬───────────────────────┘
-                                          │ HTTP / SSE / REST
-                                          ▼
-                  ┌───────────────────────────────────────────────┐
-                  │            FastAPI Gateway Server             │
-                  │  JWT Auth • Tenant Isolation • Rate Limiter   │
-                  └───────┬───────────────────────────────┬───────┘
-                          │                               │
-        ┌─────────────────┴─────────────┐   ┌─────────────┴─────────────────┐
-        ▼                               ▼   ▼                               ▼
-┌──────────────────┐  ┌──────────────────┐ ┌──────────────────┐  ┌──────────────────┐
-│ LangGraph State  │  │ Multi-Doc RAG    │ │ Persistent Cloud │  │ Extensible Tools │
-│ Machine & Loops  │  │ Hybrid Retriever │ │ Google Drive / S3│  │ Search, Stocks,  │
-│ (SQLite Saver)   │  │ (FAISS + BM25)   │ │ & Local Fallback │  │ Calc, Code, Web  │
-└──────────────────┘  └──────────────────┘ └──────────────────┘  └──────────────────┘
-```
+## At a glance
 
----
+| Area | What the project provides |
+| --- | --- |
+| Retrieval | Dense and keyword retrieval components for document-grounded responses |
+| Orchestration | A LangGraph workflow for multi-step assistant behavior |
+| User separation | Authentication and user-scoped conversations/documents in the API design |
+| Streaming | Server-Sent Events endpoint for streamed responses and workflow events |
+| Storage | Local storage plus optional cloud adapters, depending on configuration |
+| Tools | Retrieval, calculation, search, and data tools; external services may need keys |
 
-## 🚀 Key Features
+## Product experience
 
-### 1. Hybrid Multi-Document RAG Engine
-- **Dense + Sparse Fusion**: Blends semantic dense embeddings (`all-MiniLM-L6-v2`) with sparse keyword matching (BM25) via `HybridRetriever`.
-- **On-Demand Cache Warm-Up**: Rebuilds vector indexes on-the-fly from persistent cloud storage if worker memory restarts.
-- **Strict Tenant Isolation**: Ensures documents and vector embeddings are user-scoped with lifetime identity bridging.
-- **Broad Format Support**: Parses `.pdf`, `.docx`, `.doc`, `.txt`, `.md`, `.csv`, `.json`, and `.tsv`.
+The diagram is a **conceptual** view of the request path. It describes the intended flow; optional tools and remote storage are only active when configured and reachable.
 
-### 2. Multi-Turn Autonomous Agent Workflows
-- **LangGraph State Graph**: Cyclic execution model with checkpoints, human-in-the-loop (HITL) pause/resume, and rollbacks.
-- **Real-Time Token Streaming**: `POST /api/chat/stream` delivers Server-Sent Events (SSE) with live tool invocation states (`MotionThinkingBadge`).
-- **Context Compression**: Auto-summarizes long conversation histories past 12 turns to prevent context window overflow.
+<p align="center"><img src="docs/assets/agent-pilot-flow.svg" alt="Conceptual Agent-Pilot flow from client through API and LangGraph to retrieval, tools, storage, and a streamed response" width="100%" /></p>
 
-### 3. Integrated Tool Ecosystem
-- 📄 **`rag_tool`**: Document citations with page and file provenance.
-- 🌐 **`web_search`**: Live internet search powered by DuckDuckGo.
-- 📈 **`get_stock_price`**: Real-time equity market data via Alpha Vantage.
-- 🧮 **`calculator`**: Deterministic floating-point arithmetic.
-- 🕷️ **`scrape_web`**: Headless web page extraction.
-- 🗄️ **`query_database`**: Read-only SQL query runner with parameterized safety.
-- 📁 **Workspace File Tools**: Read and write files securely within workspace sandboxes.
-- 🔀 **Multi-Agent Swarm Routing**: Integrated with Ruflo agent routing.
+## Architecture
 
-### 4. Cloud Storage & State Synchronization
-- **Google Drive Storage Adapter**: Automated database sync, folder hierarchies, and one-hop file ID downloads.
-- **Failover Local Storage**: Seamless fallback to local disk storage if cloud credentials are absent.
-- **Database Self-Healing**: Auto-reconciles missing database records on startup from cloud storage.
+    Next.js client  ── HTTP / SSE ──>  FastAPI API
+                                          │
+                                          ├── Authentication and request handling
+                                          ├── LangGraph workflow
+                                          │     ├── Hybrid retrieval (dense + BM25)
+                                          │     └── Optional tools
+                                          └── Storage adapters (local or configured cloud)
 
----
+This reflects repository structure and documented components. It does not imply that a hosted service is currently running.
 
-## 📂 Repository Structure
+## Capabilities in the codebase
 
-```
-.
-├── api_server.py                # FastAPI gateway, routes, rate limiter, and SSE streaming
-├── langraph_rag_backend.py      # LangGraph state machine, nodes, hybrid retriever, tools & LLM
-├── requirements.txt             # Python dependencies
-├── src/
-│   ├── agent/                   # Autonomous planning, HITL manager, and routing
-│   ├── agents/                  # Specialized agents (Coding, Research, Swarm)
-│   ├── auth/                    # JWT authentication, password hashing, and user DB
-│   ├── mcp/                     # Model Context Protocol JSON-RPC 2.0 server
-│   ├── memory/                  # Long-term semantic and conversation memory
-│   ├── observability/           # Audit logger, token estimator, and cost tracker
-│   ├── rag/                     # MultiDocManager, HybridRetriever, and BM25 ranker
-│   ├── security/                # Prompt injection detector and output sanitizer
-│   ├── storage/                 # Document upload and lifecycle endpoints
-│   └── tools/                   # Document loaders, calculator, scrapers, DB tools
-├── storage/                     # Storage backends (Google Drive, S3, Local)
-├── frontend/                    # Next.js 14 frontend (React, Tailwind CSS, Lucide)
-│   ├── app/                     # App router pages, modals, and components
-│   └── package.json             # Frontend dependencies
-├── scripts/                     # Operational maintenance and migration utilities
-└── tests/                       # 119 unit and integration test suite
-```
+| Component | Repository implementation / documented role |
+| --- | --- |
+| Web client | Next.js app with chat and document workflows |
+| API | FastAPI routes for authentication, conversations, chat, streaming, and documents |
+| Retrieval | Dense embeddings and BM25-based keyword retrieval |
+| Workflow | LangGraph stateful orchestration and tool routing |
+| Persistence | Local storage and optional Google Drive / S3 adapters |
+| Integrations | Optional tools may require third-party credentials and network access |
 
----
+Behavior depends on the checked-out revision, environment variables, and configured services. Review the source and run the validation steps below before relying on a capability.
 
-## 🛠️ Quickstart
+## Quickstart
 
 ### Prerequisites
-- Python 3.10 or higher
-- Node.js 18+ and `npm`
 
-### 1. Backend Setup
+- Python 3.10 or newer
+- Node.js 18 or newer and npm
+- An API key for the model provider configured by your backend environment
 
-```bash
-# Clone the repository
-git clone https://github.com/Geetansh124/Agent-Pilot.git
-cd Agent-Pilot
+### 1. Clone and prepare the backend
 
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate       # On Linux/macOS
-# or: .venv\Scripts\activate    # On Windows
+PowerShell:
 
-# Install dependencies
-pip install -r requirements.txt
-```
+    git clone https://github.com/Geetansh124/Agent-Pilot.git
+    cd Agent-Pilot
+    py -3 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
 
-### 2. Environment Configuration
+macOS / Linux:
 
-Create a `.env` file in the project root:
+    git clone https://github.com/Geetansh124/Agent-Pilot.git
+    cd Agent-Pilot
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
 
-```env
-# Required for Chat & Reasoning
-NVIDIA_API_KEY=nvapi-your-key-here
+### 2. Configure the environment
 
-# Optional: Real-time Tools & Integrations
-ALPHAVANTAGE_API_KEY=your_alphavantage_key
-GOOGLE_DRIVE_OAUTH_JSON={"type":"service_account",...}  # Optional for Cloud Storage
+Copy <code>.env.example</code> to <code>.env</code> in the repository root and fill only the provider or integration values you plan to use. Keep <code>.env</code> private; it contains secrets and should never be committed.
 
-# Security & CORS
-JWT_SECRET_KEY=your-secure-random-secret-key
-FRONTEND_ORIGIN=http://localhost:3000,http://localhost:3001
-PORT=8000
-```
+### 3. Start the API
 
-### 3. Run Backend Server
+    uvicorn api_server:app --host 127.0.0.1 --port 8000 --reload
 
-```bash
-uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload
-```
+The API is available at <code>http://127.0.0.1:8000</code>; interactive API documentation is at <code>http://127.0.0.1:8000/docs</code>.
 
-Backend will be available at `http://localhost:8000` (API docs at `http://localhost:8000/docs`).
+### 4. Start the frontend
 
-### 4. Frontend Setup
+In a second terminal, from the repository root:
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+    cd frontend
+    npm install
+    npm run dev
 
-Open `http://localhost:3000` in your browser.
+Open <code>http://localhost:3000</code>. If the frontend cannot reach the API, check the configured API base URL and backend CORS origin list.
 
----
+## Configuration
 
-## 🔌 API Reference
+Start from [<code>.env.example</code>](.env.example). The example contains placeholders only. Set a model-provider key before using model-backed chat. Add optional integration credentials only if you intend to enable those services. Use a long, random JWT secret outside local development, and restrict allowed frontend origins to the domains you operate.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Health status and cloud storage connectivity. |
-| `POST` | `/api/auth/register` | Register new user account. |
-| `POST` | `/api/auth/login` | Authenticate user and receive JWT bearer token. |
-| `GET` | `/api/auth/me` | Fetch authenticated user profile. |
-| `GET` | `/api/threads` | List all conversation threads owned by user. |
-| `POST` | `/api/threads` | Create a new conversation thread. |
-| `GET` | `/api/threads/{thread_id}` | Fetch thread message history and attached document. |
-| `PATCH` | `/api/threads/{thread_id}` | Rename conversation thread. |
-| `DELETE` | `/api/threads/{thread_id}` | Delete thread and associated checkpoints. |
-| `POST` | `/api/chat` | Send message and receive synchronous agent response. |
-| `POST` | `/api/chat/stream` | Stream tokens and live tool events via Server-Sent Events (SSE). |
-| `GET` | `/api/documents` | List persistent documents stored for current user. |
-| `POST` | `/api/documents/upload` | Upload and index document to persistent cloud storage. |
-| `POST` | `/api/threads/{thread_id}/documents/{doc_id}/attach` | Attach document to thread for grounded Q&A. |
-| `GET` | `/api/threads/{thread_id}/document` | Get active attached document for the thread. |
-| `POST` | `/mcp` | Model Context Protocol JSON-RPC 2.0 handler. |
+## API surface
 
----
+These routes are documented by the project. Check the running API’s <code>/docs</code> page for exact request and response schemas for your revision.
 
-## 🧪 Testing
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | <code>/health</code> | Service health information |
+| POST | <code>/api/auth/register</code> | Register an account |
+| POST | <code>/api/auth/login</code> | Authenticate and obtain a token |
+| GET | <code>/api/auth/me</code> | Read the current user profile |
+| GET / POST | <code>/api/threads</code> | List or create conversations |
+| GET / PATCH / DELETE | <code>/api/threads/{thread_id}</code> | Read, rename, or delete a conversation |
+| POST | <code>/api/chat</code> | Send a message and receive a response |
+| POST | <code>/api/chat/stream</code> | Stream response and workflow events using SSE |
+| GET | <code>/api/documents</code> | List documents for the current user |
+| POST | <code>/api/documents/upload</code> | Upload and index a document |
+| POST | <code>/api/threads/{thread_id}/documents/{doc_id}/attach</code> | Attach a document to a conversation |
+| GET | <code>/api/threads/{thread_id}/document</code> | Read the attached document |
+| POST | <code>/mcp</code> | MCP JSON-RPC handler, if enabled in the deployment |
 
-Run the full test suite with Python's built-in `unittest` runner:
+## Validation
 
-```bash
-python -m unittest discover -s tests -p "test_*.py"
-```
+The repository documents these local checks:
 
-To run frontend production build validation:
+    python -m unittest discover -s tests -p "test_*.py"
+    cd frontend
+    npm run build
 
-```bash
-cd frontend
-npm run build
-```
+These commands are guidance; this README does not claim that they have run successfully for the current commit. A passing local run does not by itself verify external integrations or a hosted deployment.
 
----
+## Status and limitations
 
-## 🔒 Security & Privacy
+- **Local setup:** Model-backed features require valid provider credentials and installed dependencies.
+- **Hosted backend:** The frontend needs a reachable API endpoint with compatible CORS configuration. The public endpoint previously documented for this project did not return the documented health route during review, so no live demo link is published here.
+- **External tools:** Search, market data, cloud storage, and other third-party integrations can require separate keys, accounts, quotas, or network access.
+- **Production readiness:** Authentication, isolation, rate limits, and storage behavior should be independently reviewed and tested in the deployment environment before handling real users or sensitive documents.
+- **Evaluation:** No test-pass count, benchmark result, uptime, or performance figure is asserted here.
 
-- **Tenant Isolation**: Conversations, uploaded documents, and vector stores are segregated per user identity.
-- **Prompt Injection Defense**: Multi-heuristic input scanning flags and rejects prompt override attempts.
-- **Sanitized Outputs**: Strips sensitive system markers, auth tokens, and raw stack traces before client delivery.
-- **Sliding Window Rate Limiter**: Protects endpoints from abuse with per-IP sliding window counters.
+## Security and responsible use
 
----
+- Never commit API keys, OAuth credentials, JWT secrets, user documents, or local environment files.
+- Test authorization and tenant isolation before using the service with multiple users.
+- Treat model output as untrusted and review tool permissions, uploaded content, and external-service data flows.
+- Use synthetic or non-sensitive documents while evaluating a new deployment.
 
-## 📄 License
+## License
 
-This project is licensed under the [MIT License](LICENSE).
+Distributed under the [MIT License](LICENSE).
