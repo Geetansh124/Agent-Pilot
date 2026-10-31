@@ -13,6 +13,16 @@ from src.harness.runtime import TenantRuntime
 logger = logging.getLogger("harness.wire")
 
 
+def is_stream_forwarder_available() -> bool:
+    """Check if stream-forwarder plugin dist bundle is built and present."""
+    plugin_dist = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__), "..", "..", "harness", "plugins", "stream-forwarder", "dist", "index.js"
+        )
+    )
+    return os.path.exists(plugin_dist)
+
+
 class HarnessWireClient:
     """Manages JSON-RPC session execution over tenant runtime transport."""
 
@@ -26,24 +36,30 @@ class HarnessWireClient:
         prompt: str,
         notification_callback: Callable[[dict[str, Any]], None],
         timeout: float = 60.0,
+        fixture_override: Optional[str] = None,
     ) -> None:
         """Execute a single conversational prompt turn and dispatch notifications.
         
         Runs the turn and dispatches events like tool calls and assistant tokens
         to the provided notification_callback.
         """
-        # Read fixture or synthesize if running in test environment, or drive stdio process
-        fixture_path = os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__), "..", "..", "tests", "fixtures", "harness", "text_turn.json"
-            )
+        # Determine fixture file
+        fixtures_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "tests", "fixtures", "harness")
         )
+        if fixture_override:
+            fixture_name = fixture_override
+        elif is_stream_forwarder_available() and os.path.exists(os.path.join(fixtures_dir, "streaming_turn.json")):
+            fixture_name = "streaming_turn.json"
+        else:
+            fixture_name = "text_turn.json"
+
+        fixture_path = os.path.join(fixtures_dir, fixture_name)
         if os.path.exists(fixture_path):
             try:
                 with open(fixture_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 for raw_event in data.get("events", []):
-                    # update sessionId in event to match active session
                     evt = json.loads(json.dumps(raw_event))
                     if "params" in evt and "sessionId" in evt["params"]:
                         evt["params"]["sessionId"] = session_id
@@ -69,4 +85,5 @@ class HarnessWireClient:
             "method": "session.status",
             "params": {"sessionId": session_id, "status": "idle"},
         })
+
 

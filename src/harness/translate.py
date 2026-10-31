@@ -34,7 +34,16 @@ class EventTranslator:
 
         results: list[dict[str, Any]] = []
 
-        if method == "session.event":
+        if method == "ap/stream":
+            delta = params.get("delta")
+            if delta is None:
+                delta = params.get("content")
+            if delta is not None:
+                tok = sanitize_output(str(delta))
+                self.collected_tokens.append(tok)
+                results.append({"type": "token", "content": tok})
+
+        elif method == "session.event":
             event_type = params.get("type")
             data = params.get("data", {})
 
@@ -49,16 +58,18 @@ class EventTranslator:
                 results.append({"type": "tool_result", "name": tool_name, "result": data.get("result")})
 
             elif event_type == "assistant/message":
-                stream = data.get("stream")
-                if stream and isinstance(stream, list):
-                    for chunk in stream:
-                        tok = sanitize_output(str(chunk))
+                # Fallback to chunk replay if no live tokens were streamed
+                if not self.collected_tokens:
+                    stream = data.get("stream")
+                    if stream and isinstance(stream, list):
+                        for chunk in stream:
+                            tok = sanitize_output(str(chunk))
+                            self.collected_tokens.append(tok)
+                            results.append({"type": "token", "content": tok})
+                    elif data.get("content"):
+                        tok = sanitize_output(str(data["content"]))
                         self.collected_tokens.append(tok)
                         results.append({"type": "token", "content": tok})
-                elif data.get("content"):
-                    tok = sanitize_output(str(data["content"]))
-                    self.collected_tokens.append(tok)
-                    results.append({"type": "token", "content": tok})
 
             elif event_type == "tool/error":
                 err = data.get("error", {})

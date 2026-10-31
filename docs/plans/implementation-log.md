@@ -81,3 +81,13 @@ Evidence: Verified append-only harness_events with UNIQUE(thread_id, seq), atomi
 Deviations: none
 Risks / follow-ups: Live streaming and shadow evaluation comparator in Phase 6
 Next: Phase 6 — Live streaming & shadow evaluation (HP-060 … HP-064)
+
+### PHASE 6 — Live streaming & shadow evaluation
+Status: complete
+Tickets: HP-060 … HP-064
+Changed: harness/plugins/stream-forwarder/*, src/harness/wire.py, src/harness/translate.py, src/harness/router.py, src/harness/shadow.py, tests/fixtures/harness/streaming_turn.json, tests/test_harness_shadow.py
+Tests: python -m unittest tests/test_harness_shadow.py (7 passed); python -m unittest (156 passed, 0 failed)
+Evidence: Verified TypeScript stream-forwarder build, real-time ap/stream delta frames, deduplication and token preservation, fallback to Phase 2 replay when forwarder is absent, and 40-turn shadow evaluation meeting gate criteria (tool parity 97.5% >= 95%, 0 safety violations, p95 latency overhead <= 25%)
+Deviations: none
+Risks / follow-ups: build metrics accounting and quota controls in Phase 7
+Next: Phase 7 — Observability, metrics & quota controls (HP-070 … HP-074)

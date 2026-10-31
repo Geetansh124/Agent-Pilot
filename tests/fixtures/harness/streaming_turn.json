@@ -1,0 +1,69 @@
+{
+  "events": [
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "busy",
+        "timestamp": 1730400000.100
+      }
+    },
+    {
+      "method": "ap/stream",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "delta": "Live ",
+        "frameType": "delta",
+        "index": 0
+      }
+    },
+    {
+      "method": "ap/stream",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "delta": "streaming ",
+        "frameType": "delta",
+        "index": 1
+      }
+    },
+    {
+      "method": "ap/stream",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "delta": "from ",
+        "frameType": "delta",
+        "index": 2
+      }
+    },
+    {
+      "method": "ap/stream",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "delta": "forwarder!",
+        "frameType": "delta",
+        "index": 3
+      }
+    },
+    {
+      "method": "session.event",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "type": "assistant/message",
+        "data": {
+          "id": "msg-002",
+          "role": "assistant",
+          "content": "Live streaming from forwarder!"
+        }
+      }
+    },
+    {
+      "method": "session.status",
+      "params": {
+        "sessionId": "ap-thread-101",
+        "status": "idle",
+        "timestamp": 1730400000.800
+      }
+    }
+  ]
+}
+
