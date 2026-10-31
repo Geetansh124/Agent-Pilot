@@ -120,7 +120,7 @@ In a second terminal, from the repository root:
     npm install
     npm run dev
 
-Open <code>https://agent-pilot.soapy-pint.workers.dev/</code>. If the frontend cannot reach the API, check the configured API base URL and backend CORS origin list.
+Open <code>https://agent-pilot.soapy-pint.workers.dev</code>. If the frontend cannot reach the API, check the configured API base URL and backend CORS origin list.
 
 ## Configuration
 
